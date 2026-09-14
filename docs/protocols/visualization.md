@@ -27,6 +27,8 @@
 
 视频 FPS 与 control Hz 分开：编码 25 FPS 不表示控制 25 Hz。画面采样/重复/插值规则、settling frames、是否包含 warmup、是否变速和是否裁剪都进入展示元数据。左右比较固定同一种时间基准和速度，不按各自完成比例拉伸视频制造快慢差异。
 
+后续媒体契约至少定义 `source_frame_id`、`observation_id`、capture clock/timestamp、sim tick、视频 PTS 与 `repeated_from`。延长显示同一帧不产生新的 observation。只有环境事件证明世界冻结才能标 paused；若世界继续推进而界面显示旧图，应标“最近采样画面”。导入无原始 trace 的视频标明时间关系不可验证。
+
 ## 数据流
 
 ```mermaid

@@ -62,6 +62,8 @@ release_wait = max(0, result_released - previous_chunk_boundary)
 
 静态质量基线可在推理期间冻结 simulator；动态实验要在延迟期间推进世界动力学。仅 `time.sleep()` 而不调用环境 step，不能模拟物体在推理时运动。是否保持机器人最后一个控制指令、保持位置或采用专用 idle controller 由 task adapter 定义；位置控制下“全零动作”未必是安全保持，不能作为通用默认值。
 
+后续配置显式声明 `world_progression=frozen_during_inference` 或 `advance_during_delay`，与 schedule 和视频播放方式独立。当前 v1 schema 尚未包含该字段，增加生产者时先提交契约扩展。状态恢复回放、动作积分回放与 policy 闭环也分别标识：只有实际 policy 闭环结果才能作为该策略的任务成功证据。
+
 新的虚拟协议用整数 tick 或时间累加器推进，使长期累计的控制时刻与目标时间一致；不要每次延迟独立四舍五入造成系统偏差。历史 Kinetix 复现可单独使用 `legacy_round` 映射以保留原论文 round(tau/33.33ms) 语义，禁止把新映射结果混作历史曲线。小于 physics dt 的延迟也必须保留余量。控制 dt、physics dt、实际积分 substeps 和剩余时间都写入配置。
 
 首版 async 限定每个 policy 一个在途请求，队列有界。观察线程只能写入 snapshot/mailbox，policy worker 不能操作可变 env。触发点由“队列还剩多少动作”或明确模拟/墙钟时间决定；`overlap_actions=n′` 是实验参数，其有效上限受实际队列和推理延迟约束。
@@ -69,6 +71,8 @@ release_wait = max(0, result_released - previous_chunk_boundary)
 默认先完成旧 chunk 再接新 chunk，便于对齐同步 baseline。后续 `replace_pending` 或按 action valid-time 丢弃过时前缀作为独立协议增加，声明新旧 chunk 的交接位置、空队列行为及 late-result 行为。禁止静默重复最后动作、无限缓存结果或随意截断输出来改善数字。
 
 episode reset 增加 epoch；旧 epoch 的 Future 即使完成也必须丢弃。episode 在推理/注入等待期间达到 terminal，应立即逻辑结束并拒绝动作；在途 CPU/GPU 请求隔离并等待完成或可靠取消后，才能释放其输入输出和 workspace，结果稍后返回不能继续执行。必须覆盖推理异常、worker 退出、取消/超时、输出非法值、队列耗尽与 late completion。
+
+预算检查发生在是否允许开始下一动作的决策前，执行完第 K 个动作后不得因计数更新顺序再执行 K+1 个。终止记录和视频末帧都应能追溯到同一次终止决策，不能让慢渲染推迟它。
 
 真实时间模式的 simulator runner 不等待 `Future.result()` 后才判断是否应该 step。worker 与 runner 需避免 GIL、CUDA 同步或渲染导致隐性串行；可用独立进程，但选择须以 trace 验证。runner 记录 deadline miss 和 real-time factor；无法维持控制频率时报告超期，不把 host 调度拖慢误报成可控注入延迟。
 
