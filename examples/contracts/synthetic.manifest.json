@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "synthetic-run",
+  "synthetic": true,
+  "protocol": {
+    "schedule": "sync",
+    "clock": "virtual",
+    "delay_mode": "profile_replay",
+    "profile_id": "synthetic-100ms",
+    "physics_dt_ns": 10000000,
+    "control_dt_ns": 50000000,
+    "action_chunk_length": 1,
+    "execution_length": 1
+  },
+  "clock_domains": {
+    "sim": {
+      "kind": "simulation",
+      "process_id": "fixture",
+      "monotonic_origin": "run-start"
+    },
+    "host": {
+      "kind": "host_monotonic",
+      "process_id": "fixture",
+      "monotonic_origin": "process-start"
+    }
+  },
+  "episodes": [
+    {
+      "episode_id": "ep-1",
+      "seed": 7
+    }
+  ],
+  "budget": {
+    "clock_domain": "sim",
+    "start_event": "first_observation_sampled",
+    "limit_ns": 1000000000
+  }
+}

@@ -1,0 +1,41 @@
+name: CPU CI
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cpu-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-contracts:
+    name: CPU contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # 官方 v7 tag 在 2026-09-14 核实；升级时重新核对上游并更新 SHA。
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - name: Install CPU development dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check Python style
+        run: |
+          python -m ruff check tools tests
+          python -m ruff format --check tools tests
+      - name: Validate synthetic contract examples
+        run: python tools/validate_contracts.py --examples
+      - name: Run CPU tests
+        run: python -m pytest -q
+      - name: Check Python syntax
+        run: python -m compileall -q tools

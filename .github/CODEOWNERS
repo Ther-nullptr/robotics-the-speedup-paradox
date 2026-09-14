@@ -1,0 +1,4 @@
+# 初始公共仓库 owner。启用前确认 @Ther-nullptr 对仓库有写权限。
+# 此文件不会自行启用强制 review；远端分支规则尚未配置或验证。
+# 维护者自己的 PR 仍需另一位合格的非作者 reviewer。
+* @Ther-nullptr

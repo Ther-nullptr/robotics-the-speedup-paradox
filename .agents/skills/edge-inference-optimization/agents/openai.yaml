@@ -1,0 +1,4 @@
+interface:
+  display_name: "Edge inference optimization"
+  short_description: "Profile and optimize edge inference with quality checks"
+  default_prompt: "Use $edge-inference-optimization to investigate the measured bottleneck and validate an end-to-end improvement on the target device."

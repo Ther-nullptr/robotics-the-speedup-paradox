@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Run manifest contract v1",
+  "description": "Minimal protocol contract. This does not claim model or experiment reproducibility.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule": {
+          "enum": [
+            "sync",
+            "history_observation",
+            "async"
+          ]
+        },
+        "clock": {
+          "enum": [
+            "virtual",
+            "realtime"
+          ]
+        },
+        "delay_mode": {
+          "enum": [
+            "zero",
+            "profile_replay",
+            "measured",
+            "additive",
+            "target_total"
+          ]
+        },
+        "physics_dt_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "control_dt_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action_chunk_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "execution_length": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "history_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "profile_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schedule",
+        "clock",
+        "delay_mode",
+        "physics_dt_ns",
+        "control_dt_ns",
+        "action_chunk_length",
+        "execution_length"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "clock": {
+                "const": "virtual"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "delay_mode": {
+                "enum": [
+                  "zero",
+                  "profile_replay"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "delay_mode": {
+                "enum": [
+                  "measured",
+                  "additive",
+                  "target_total"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "schedule": {
+                "const": "history_observation"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "history_steps"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delay_mode": {
+                "const": "profile_replay"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "profile_id"
+            ]
+          }
+        }
+      ]
+    },
+    "clock_domains": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "simulation",
+              "host_monotonic",
+              "device"
+            ]
+          },
+          "process_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "monotonic_origin": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "process_id",
+          "monotonic_origin"
+        ]
+      }
+    },
+    "episodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "episode_id",
+          "seed"
+        ]
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clock_domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_event": {
+          "const": "first_observation_sampled"
+        },
+        "limit_ns": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "clock_domain",
+        "start_event",
+        "limit_ns"
+      ]
+    },
+    "host_watchdog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clock_domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_ns": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "clock_domain",
+        "timeout_ns"
+      ]
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trials": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "successes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "successful_task_time_mean_ns": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "successful_chunk_count_mean": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "trials",
+        "successes",
+        "successful_task_time_mean_ns",
+        "successful_chunk_count_mean"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "successes": {
+                "const": 0
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "successful_task_time_mean_ns": {
+                "type": "null"
+              },
+              "successful_chunk_count_mean": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "synthetic",
+    "protocol",
+    "clock_domains",
+    "episodes",
+    "budget"
+  ]
+}

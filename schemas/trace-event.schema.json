@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trace event contract v1",
+  "description": "One JSON object per JSONL line. event_seq is run-wide serialization order; timestamps are comparable only in the same declared domain.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "episode_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "event_seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "clock_domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp_ns": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "episode_id",
+    "event_seq",
+    "event_type",
+    "clock_domain",
+    "timestamp_ns"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "event_type": {
+          "const": "observation_sampled"
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sim_tick": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "observation_id",
+        "sim_tick",
+        "input_ref"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "inference_submitted"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "request_id",
+        "observation_id"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "inference_started"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "worker_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "request_id",
+        "backend",
+        "worker_id"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "inference_completed"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "cancelled"
+          ]
+        }
+      },
+      "required": [
+        "request_id",
+        "status"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "chunk_id"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "chunk_id"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "result_released"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delay_mode": {
+          "enum": [
+            "zero",
+            "profile_replay",
+            "measured",
+            "additive",
+            "target_total"
+          ]
+        },
+        "delay_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Declared delay sample: profile total, additive increment or target total, according to delay_mode; not an inferred observation age."
+        },
+        "profile_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "overshoot_ns": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "request_id",
+        "chunk_id",
+        "delay_mode",
+        "delay_ns",
+        "profile_id",
+        "overshoot_ns"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "action_started"
+        },
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "chunk_id",
+        "action_index",
+        "observation_id"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "action_finished"
+        },
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "action_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "chunk_id",
+        "action_index",
+        "observation_id"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "queue_underrun"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "queue_length": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "reason",
+        "queue_length"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "result_dropped"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "request_id",
+        "reason"
+      ]
+    },
+    {
+      "properties": {
+        "event_type": {
+          "const": "episode_finished"
+        },
+        "terminal_reason": {
+          "enum": [
+            "success",
+            "task_failure",
+            "timeout",
+            "infrastructure_error",
+            "cancelled"
+          ]
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "budget_type": {
+          "const": "fixed_budget"
+        }
+      },
+      "required": [
+        "terminal_reason",
+        "success",
+        "budget_type"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "terminal_reason": {
+                "const": "success"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "success": {
+                "const": true
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "success": {
+                "const": false
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}
