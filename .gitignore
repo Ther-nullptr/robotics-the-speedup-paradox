@@ -19,3 +19,20 @@ runs/
 *.ckpt
 *.pt
 *.pth
+
+# Local working notes and research; shared decisions belong in Issue/PR or protocols.
+.local/
+/docs/references/
+/docs/handoffs/
+/docs/tasks/*
+!/docs/tasks/README.md
+/docs/codex-analysis-logs/
+/docs/research/
+/docs/plans/
+
+# Rebuildable diagram and plotting outputs; keep sources/configuration/scripts.
+/docs/diagrams/rendered/
+/docs/diagrams/architecture-atlas.html
+/docs/diagrams/gallery.md
+/docs/diagrams/render-manifest.json
+/tools/embodied/examples/trajectory-comparison.png

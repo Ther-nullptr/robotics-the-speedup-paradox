@@ -1,5 +1,7 @@
 # 模块与复用边界
 
+[架构图源码与生成说明](diagrams/README.md) 覆盖总体模块、异步时序、推理内部路径和双仓 PR 流程；SVG/HTML 在本地按需生成。
+
 当前只有契约校验工具与开发协议。下面的 runtime 和 adapter 路径是后续模块边界，按任务逐步创建，不以空目录或空类表示模型已支持。
 
 先在同一仓库维护公共核心与机器人调用方，避免新成员同时协调多个仓库。后续其他项目通过固定版本/SHA 依赖公共核心；第二个真实调用方出现后再决定是否独立拆包。
@@ -12,8 +14,8 @@ schemas/                   manifest 与事件格式
 examples/                  当前契约样例，之后增加 CPU 调度样例
 tests/                     当前校验测试，之后增加 runtime/backend/integration
 benchmarks/                之后增加 kernel、policy、closed-loop 的分层测量
-docs/tasks/                有 owner、范围、依赖和验收的任务卡
-docs/handoffs/              跨成员、跨 AI 会话的接力记录
+docs/tasks/README.md       长期工作方向；具体任务与交接放在 Issue / PR
+docs/templates/            可复制到 Issue / PR 的任务与交接模板
 ```
 
 ## 单向依赖
@@ -32,6 +34,8 @@ flowchart LR
 ```
 
 公共核心不得 import `robotics_bench` 或模拟器，也不得依赖任何兄弟目录。顶层 import 不加载 GPU/模型/模拟器。未来初版可用一个 distribution 提供两个 namespace，模型/GPU/模拟器放可选依赖，待真实需求推动拆包。
+
+需要修改第三方模拟器内部源码时，采用独立 fork 与固定提交依赖，主仓保留 adapter、调度和实验配置。引入方式、版本与跨仓 PR 见 [模拟器依赖协议](protocols/simulator-dependencies.md)。
 
 ## 责任划分
 

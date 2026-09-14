@@ -1,19 +1,19 @@
 name: 接力开发任务
-description: 认领已有任务卡，或提出一个可验收的小任务。
+description: 提出或认领一个范围与验收清楚的小任务。
 title: "[任务] "
 body:
   - type: markdown
     attributes:
       value: |
         当前仓库提供协议、schema 与 CPU 校验，没有推理或仿真实现。
-        完整范围保存在 docs/tasks/ 的任务卡；Issue 记录认领、讨论和状态。
-        已有任务只引用卡片路径，下面填必要摘要；不要重复维护两份完整规范。
+        在本 Issue 记录范围、验收、负责人及接力状态，无需额外提交阶段任务卡。
+        稳定接口和实验口径的变化仍同步更新仓内协议。
   - type: input
-    id: task_card
+    id: related_work
     attributes:
-      label: 任务卡
-      description: 仓库相对路径；新任务写“待创建”及拟定 ID。
-      placeholder: docs/tasks/010-cpu-scheduler.md
+      label: 关联工作
+      description: 关联 Issue/PR 或长期方向；新任务可写“无”。
+      placeholder: "例如：CPU 调度语义；关联 #12"
     validations:
       required: true
   - type: input
@@ -27,7 +27,7 @@ body:
     id: behavior
     attributes:
       label: 要改变的可观察行为
-      description: 用一个输入、时间线或错误说明问题；已有卡片可只写本次子任务。
+      description: 用一个输入、时间线或错误说明本次任务要解决的问题。
     validations:
       required: true
   - type: textarea

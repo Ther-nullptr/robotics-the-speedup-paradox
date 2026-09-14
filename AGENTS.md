@@ -4,8 +4,8 @@
 
 ## 开始工作
 
-1. 阅读 `README.md`、`CONTRIBUTING.md`、当前任务卡及相关 `docs/protocols/` 文档。
-2. 确认 `git status --short`、分支和基线 commit，保留其他人的修改。任务范围以任务卡和用户最新指令为准。
+1. 阅读 `README.md`、`CONTRIBUTING.md`、当前 Issue/PR 的任务范围及相关 `docs/protocols/` 文档。
+2. 确认 `git status --short`、分支和基线 commit，保留其他人的修改。任务范围以 Issue/PR 和用户最新指令为准。
 3. 先跑相关最小例子，再改变一个可观察行为。缺少设备、资产或已知实验参数时明确记录，不自动编造。
 
 ## 修改边界
@@ -32,4 +32,4 @@ python -m compileall -q tools
 
 开发依赖安装命令见 `CONTRIBUTING.md`。`compileall` 是语法检查，不是 formatter。报告实际运行的命令、结果及未验证条件；schema 校验通过不能证明实时性、数值精度或任务成功率。
 
-完成或暂停时检查 diff，更新 `docs/handoffs/<task-id>.md` 的事实、证据与后续动作。保留必要错误和尝试结论，不提交整段 AI 聊天记录。合并和发布由维护者负责。
+完成或暂停时检查 diff，将需要共享的事实、证据和后续动作写入 Issue/PR 的交接摘要。个人过程记录可放 `.local/`、`docs/handoffs/` 或工作区研究目录，这些不进入 Git；不要求每次对话新增文档。代码、稳定协议、工具说明和可复现小样例随版本管理，研究综述、阶段记录和生成图表留本地。已提交文档不得链接被忽略的本地文件。合并和发布由维护者负责。

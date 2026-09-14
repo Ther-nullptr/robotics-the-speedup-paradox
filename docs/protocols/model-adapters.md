@@ -23,6 +23,8 @@ Cosmos-Policy 和 LingBot-VA 的机器人适配器属于本仓库；后续其他
 
 ## 量化与融合接口
 
+同一模型/任务比较量化、异步及其组合时，使用 [组合实验协议](composable-experiments.md)：精度配置作用于policy构建，调度配置作用于runner，保持共同实验案例与统一记录格式。
+
 量化配置独立于 policy 与 kernel。每层记录模块路径、weight/activation/accumulator dtype、scale/group/zero-point 规则、calibration/pack 版本、实际 backend、fallback 原因。fake quant 只用于质量/方法分析，不作为低比特性能证明。
 
 保留 reference、仅替换量化 GEMM、加入外围优化三个可区分的运行点。测试分层：算子误差；固定输入多步 action 误差；闭环 SR/任务时间与失败代价。尚未做的层级写“未验证”，不要将 LLM 的首 token 标准用于连续动作。
@@ -30,6 +32,8 @@ Cosmos-Policy 和 LingBot-VA 的机器人适配器属于本仓库；后续其他
 π0.5 的开源后端可以作为可选 backend 候选，但不得强迫 Cosmos/LingBot 采用同一张图、同一 KV 格式或同一个量化 kernel。后端抽象共同处理 capability、输入输出和计时，模型内部细节保留在自己的模块。
 
 ## 动态仿真接口
+
+LIBERO、RoboCasa、RoboTwin、Kinetix、DOM 采用各自 adapter。公共接口定义实验语义；运行环境、批量/JIT 或独立进程方式按 [后端协议](simulator-backends.md) 保留，不要求统一逐步 Python 调用或底层状态格式。
 
 `observe()` 返回真实采样时刻的快照；`step(action)` 只推进已声明的 control/physics tick；任务显式给出等待期间 robot control 和世界动力学规则。`render()` 是观测读操作，不能改变状态或阻塞控制。
 

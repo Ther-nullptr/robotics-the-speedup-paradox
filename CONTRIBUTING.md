@@ -1,15 +1,22 @@
 # 贡献与接力开发
 
-当前先搭好开发协议和数据契约。参与贡献不要求先复现论文，也不需要 GPU、模型权重或模拟器。模型推理与仿真运行时尚待实现，当前测试检查 schema 与部分事件因果关系。
+从 [README](README.md) 配置环境，使用 [工作路线](docs/tasks/README.md) 选择方向。当前工具可在CPU运行，参与开发不要求先复现论文。
 
-## 第一次开始
+## Issue、PR与交接
 
-使用 Python 3.11 或 3.12，在本仓库根目录创建环境：
+一个任务有一位owner和一位reviewer。**Issue记录范围、依赖、验收和状态；PR记录实现、验证与兼容变化。** 可复制 [任务模板](docs/templates/task.md) 填写Issue，不要求额外提交一份阶段任务卡。
+
+开始工作时确认分支、基线commit和已有修改；使用短分支，例如 `feat/issue-12-clock-case`。多人使用独立checkout/worktree。公共接口的变化先合并规范，再并行修改调用方。
+
+把AGENTS、相关协议和Issue范围提供给AI。提交者检查diff，能解释关键行为及验证范围；AI不能代替作者或reviewer承担确认责任。一次PR解决一个可观察问题，避免混入无关格式化与重构。
+
+完成或换人时，用 [交接模板](docs/templates/handoff.md) 在Issue/PR中留下事实、最后成功命令、当前问题及下一步。未完成也能交接；个人草稿、会话记录可放 `.local/` 或已有的本地笔记目录，不需要进入Git。
+
+## 验证与合并
+
+代码变更运行相应检查：
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
 python -m ruff check tools tests
 python -m ruff format --check tools tests
 python tools/validate_contracts.py --examples
@@ -17,62 +24,26 @@ python -m pytest -q
 python -m compileall -q tools
 ```
 
-如果使用 `uv`，也可以用它创建独立 Python 3.11 环境：
+绘图测试需要可选Matplotlib依赖，未安装时跳过这部分，数值核心测试仍运行。纯文档修改核对链接与 `git diff --check`；不为拼写修改新增测试或运行GPU实验。图册脚本修改还需实际重建并检查输出。
 
-```bash
-uv venv --python 3.11 .venv
-source .venv/bin/activate
-uv pip install -r requirements-dev.txt
-```
+使用 [PR模板](.github/PULL_REQUEST_TEMPLATE.md) 提交可审阅结果。行为变化提供输入/时间线、命令、环境、实际输出、相关失败边界和未验证条件。性能变更同时给正确性与完整policy延迟；闭环变更另报SR、时间域和失败预算。无实测的模型/设备保持未验证状态。
 
-样例检查和测试应以退出码 0 完成；以实际输出为准，不把测试数量写成固定承诺。`compileall` 仅检查 Python 语法；Ruff 检查和格式检查由 CPU CI 强制执行。工具报错时保留最小命令及错误；先解决环境或已有失败，再解释本次改动。
+reviewer复现关键案例并核对接口语义；维护者在至少一位非作者审阅和相关检查通过后合并。接口或实验口径变化同步更新稳定协议，普通文档PR不等待GPU。
 
-从 [任务入口](docs/tasks/README.md) 选择一项工作。先找到一条合成事件及其关联 observation/request，再复现任务卡中的边界案例。不要用合成数据生成论文结果。
+## 哪些文件进入Git
 
-## 任务如何认领
+| 保留版本化 | 留在本地 |
+| --- | --- |
+| 代码、测试、依赖、schema、小型可公开样例 | 权重、数据集、运行日志、临时结果 |
+| README、AGENTS、协作模板、工具使用与指标定义 | 会话记录、已完成handoff、阶段任务卡 |
+| 稳定架构/接口协议、Mermaid源码、生成脚本与配置 | 研究综述、可重建SVG/HTML/PNG与生成清单 |
 
-一个任务有一位 owner 和一位 reviewer。GitHub Issue 管理认领、讨论和状态；`docs/tasks/<id>-<topic>.md` 是范围与验收的唯一完整记录。新任务使用 [任务卡模板](docs/templates/task.md)，已有任务在 Issue 中引用路径，不复制整份内容。
+忽略规则按具体目录/产物设置，不使用全局 `*.md` 排除必要说明。`.gitignore` 不会自动移除已跟踪文件；停止跟踪时保留本地内容。公共README和稳定规范只链接仓内已跟踪文件或公开来源。
 
-任务卡必须写清楚可观察问题、允许修改的文件、输入输出契约、依赖、验收与所需环境。没有设备的同学可完成契约、fixture 和接口工作；未实测的模型/设备不得标为 verified。范围扩大时更新任务卡，较大的独立工作拆成后续任务。
+本仓库安装和运行不得依赖父目录的私有资料。外部源码先登记来源及条款，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。公开PR的CI使用托管临时CPU runner；实验室GPU验证通过单独隔离流程处理。
 
-首次贡献可选 CPU 事件案例、校验器错误信息或 trace 显示。公共时间语义、数值门槛和并发资源规则由维护者或相应模块负责人专项审阅。
+## 维护者配置远端
 
-## 分支与 AI 使用
+首次CI成功后，可启用main必需PR、非作者批准、`CPU contracts`状态检查、解决review讨论和禁止force push。本地配置存在不代表远端规则已生效。
 
-从当前 `main` 创建短分支，例如 `feat/010-clock-case` 或 `fix/001-error-message`。同一任务使用独立 checkout/worktree，避免多人在同一个目录切分支。依赖接口先合并，再并行开发调用方；共享分支不随意重写历史。
-
-把 [AGENTS.md](AGENTS.md)、任务卡和相关协议交给 AI。提交者必须检查 diff，能解释关键输入输出、时间线与验证范围。AI 可以实现和测试，不能代替提交者确认结果或代替 reviewer 批准。不要把数千行生成结果、格式化和功能修改混成一个 PR。
-
-## PR 的完成标准
-
-使用 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)，提交 Draft PR 即可发起早期审阅。普通文字修订写清改动即可；会改变行为、公共 API、数值、性能或实验结论的 PR 要包含：
-
-- 一个输入或时间线，说明修改前后的可观察差别。
-- baseline/PR commit、精确命令、环境和实际结果；相关原始 artifact 使用可访问链接或仓内路径。
-- 对应的失败边界或回归案例，以及未验证条件。
-- 契约版本和兼容性变化；需要迁移时说明处理办法。
-- 已更新的 [交接记录](docs/handoffs/README.md)。
-
-性能改动日后需同时提供正确性与完整 policy 延迟；闭环改动另报 trials、SR、任务时钟和失败预算。当前只有 CPU 契约检查，不宣称上述能力已完成。实验路径可标为 implemented-unverified，只有实际证据支持时升级为 verified。
-
-提交前执行上面的 CPU 检查，并查看 `git diff --check` 与 `git diff`。新增行为使用针对该行为的测试；拼写修改不要求新增测试或 GPU 实验。
-
-reviewer 复现相关最小案例并核对语义；作者回应未解决意见。维护者确认范围、检查结果和至少一位非作者的审阅后合并，通常采用 squash merge。重要接口或时间协议变更需要明确指定懂该语义的人审阅；普通文档 PR 不等待 GPU。
-
-## 交接与暂停
-
-使用 [handoff 模板](docs/templates/handoff.md)，写入 `docs/handoffs/<task-id>.md`。保留当前分支/commit、已确认事实、最后成功命令、当前失败、运行作业及下一位的 1–3 个动作。不要求为了交接先完成任务，也不要把聊天记录当作工程状态。
-
-## 公共边界
-
-本仓库的安装、测试、模板与公共文档只使用仓内文件和公开依赖。不要提交私有项目源码、内部评审资料、密钥、未公开数据、权重或机器绝对路径。可共享的错误日志应移除这些内容。外部代码先登记来源与对应许可，见 [第三方来源记录](THIRD_PARTY_NOTICES.md)。
-
-CPU CI 只在 GitHub 托管的临时 runner 执行，不使用实验室 GPU、私有挂载或仓库写权限。日后测试公开 fork 的 GPU 代码，应由维护者选定 commit 后进入隔离环境，不能自动在持有私有资料的常驻 runner 执行。[GitHub Actions 安全说明](https://docs.github.com/en/actions/reference/security/secure-use)
-
-## 维护者启用远端规则
-
-本地已提供 CI 和模板，尚未在远端运行或验证。建议在首次正常 CI 运行后启用 `main` 的必需 PR、至少一位非作者批准、必需状态检查 `CPU contracts`、解决审阅讨论、变更后重新审阅和禁止 force push。
-
-[CODEOWNERS](.github/CODEOWNERS) 使用已知维护者 `@Ther-nullptr`。生效前需确认该账号对仓库有写权限，再在分支规则中启用 code-owner review；文件本身不会强制批准。启用强制 code-owner review 前，需先在 CODEOWNERS 增加至少一位真实有写权限的共同维护者；仅有当前一位 owner 时，他自己的 PR 无法由自己批准。维护者自己提交 PR 时仍需要另一位有资格的非作者 reviewer。模块 owner 待成员和权限落实后增加，不使用虚构账号。[GitHub CODEOWNERS](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners)
-
-本轮没有修改远端权限、保护规则或创建远端 Issue/PR。
+[CODEOWNERS](.github/CODEOWNERS) 当前使用 `@Ther-nullptr`；启用强制owner review前加入真实有写权限的共同维护者，避免唯一owner自己的PR无人可批准。远端设置和发布由维护者操作。

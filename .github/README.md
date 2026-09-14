@@ -2,7 +2,7 @@
 
 这些文件供独立公开仓库使用：
 
-- `ISSUE_TEMPLATE/task.yml`：小任务与认领表单；完整任务卡保存在 `docs/tasks/`。
+- `ISSUE_TEMPLATE/task.yml`：小任务与认领表单；Issue 记录范围、验收和接力状态。
 - `PULL_REQUEST_TEMPLATE.md`：行为变化、实际证据、兼容和交接。
 - `CODEOWNERS`：初始 owner 为 `@Ther-nullptr`，生效前确认账号有写权限。
 - `workflows/cpu.yml`：稳定 job 名称 `CPU contracts`，Python 3.11，GitHub 托管 CPU runner。

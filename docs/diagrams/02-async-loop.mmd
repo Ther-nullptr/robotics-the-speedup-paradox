@@ -1,0 +1,38 @@
+sequenceDiagram
+    accTitle: Planned Asynchronous Control Loop
+    accDescr: Illustrative logical concurrency on one simulation timeline. An observation is sampled at zero, inference completes at 80 ms, and the next chunk starts after the old chunk ends at 120 ms. Boundary wait is zero while observation age is 120 ms. This is a planned protocol, not a measurement.
+    participant runner as ProtocolRunner
+    participant world as 执行循环（Runner 驱动）
+    participant model as Policy / Backend
+    participant queue as ActionQueue
+    participant trace as TraceSink
+
+    Note over runner,trace: 目标逻辑，尚未实现；旧 chunk 已在执行的局部时间轴
+    runner->>world: t=0：采样不可变 observation
+    world-->>runner: obs_id + episode_id + sample_time
+    runner-->>trace: observation_sampled
+    runner->>model: submit(request_id, observation)
+    runner-->>trace: inference_submitted
+
+    par 模型推理
+        model-->>trace: 实际开始时记录 inference_started
+        model->>model: 预处理 → forward → 动作可消费
+        model-->>runner: t=80 ms：completed(chunk)
+        runner->>runner: 校验 episode；满足 release 条件
+        runner->>queue: 新 chunk 可用，等待旧 chunk 交接
+        runner-->>trace: completed / released
+    and 世界与旧动作推进
+        loop t=0 至 t=120 ms：按控制节拍
+            world->>queue: 读取旧 chunk 的下一个动作
+            queue-->>world: 旧动作；欠载时采用声明的 hold 策略
+            world->>world: 更新控制器、动力学与观测
+            world-->>trace: 动作事件 + sim tick / 采样引用
+        end
+    end
+
+    Note over runner,queue: t=120 ms：旧 chunk 结束；本例无额外注入等待
+    world->>queue: 请求下一个动作
+    queue-->>world: 新 chunk 的首动作，来源仍为 t=0 的观测
+    world-->>trace: action_started(t=120 ms, obs_id)
+    Note over world,trace: boundary_wait = 0 ms；observation_age = 120 ms
+    Note over runner,trace: 任意时刻 terminal：禁止新动作；在途结果隔离并 drain 后释放资源

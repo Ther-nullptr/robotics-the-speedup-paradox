@@ -1,0 +1,54 @@
+flowchart TB
+    accTitle: Target Robotics Infrastructure Architecture
+    accDescr: Green nodes are existing local contract and collaboration files. Blue nodes are planned code. Gray nodes are external consumers or simulator environments. Solid arrows mean uses or calls; dotted arrows express development and data constraints.
+
+    subgraph public_repo["robotics：独立公开仓库"]
+        direction TB
+        subgraph foundation["已有本地基座"]
+            direction LR
+            collaboration["AGENTS · 任务卡 · PR / 交接模板<br/>已有文件；远端规则待启用"]
+            contracts["schemas · validator · CPU tests<br/>已实现：数据与事件校验"]
+        end
+        subgraph target_code["目标代码：均待实现"]
+            direction TB
+            entry["实验入口<br/>模型 × 场景 × 协议 × 设备"]
+            runner["ProtocolRunner<br/>时钟 · 延迟 · 队列 · 终止"]
+            policy["PolicyAdapter<br/>Cosmos-Policy · LingBot-VA · π0.5"]
+            simulator["SimulatorAdapter<br/>按后端实现推进 / 采样 / reset"]
+            shared_core["streaming_infra<br/>算子后端 · buffer / 状态 · 计时 · trace"]
+            viewer["Viewer + metrics<br/>状态回放 · 时间轴 · SR / 失败代价"]
+            entry --> runner
+            runner --> policy
+            runner --> simulator
+            runner --> shared_core
+            policy --> shared_core
+            simulator --> shared_core
+            viewer -->|读取 trace| shared_core
+        end
+        collaboration -.开发约定.-> entry
+        contracts -.事件契约.-> shared_core
+    end
+
+    future_consumers["后续 VLM / WM 调用方<br/>独立项目；单向依赖公共核心"]
+    future_consumers --> shared_core
+
+    subgraph external_envs["外部模拟环境：按需接入，各自锁定版本与资产"]
+        direction LR
+        mujoco_envs["LIBERO / RoboCasa<br/>robosuite · MuJoCo<br/>分别验证兼容性"]
+        kinetix_env["Kinetix<br/>JAX · Jax2D<br/>保留编译与批量执行"]
+        dom_env["DOM / DynamicVLA<br/>Isaac Lab · Isaac Sim<br/>独立仿真进程"]
+        robotwin_env["RoboTwin<br/>选定版本的环境栈"]
+    end
+    simulator --> mujoco_envs
+    simulator --> kinetix_env
+    simulator --> dom_env
+    simulator --> robotwin_env
+    %% Invisible edge only keeps external environments below the shared core.
+    shared_core ~~~ external_envs
+
+    classDef existing fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:1.5px
+    classDef planned fill:#dbeafe,stroke:#2563eb,color:#172554,stroke-width:1.5px
+    classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-width:1.5px
+    class collaboration,contracts existing
+    class entry,runner,policy,simulator,shared_core,viewer planned
+    class future_consumers,mujoco_envs,kinetix_env,dom_env,robotwin_env external

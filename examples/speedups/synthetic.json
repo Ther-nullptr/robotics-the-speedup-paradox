@@ -1,0 +1,44 @@
+{
+  "format_version": "1.0",
+  "synthetic": true,
+  "case_id": "synthetic-same-case-speedup-tradeoff",
+  "timing_scope": "policy_inference",
+  "clock_domain": "simulation",
+  "n_actions": 10,
+  "action_time_ms": 20,
+  "baseline_id": "baseline",
+  "runs": [
+    {
+      "id": "baseline",
+      "inference_time_ms": 100,
+      "overlap_actions": 0,
+      "trials": 100,
+      "successes": 80,
+      "successful_chunk_count_mean": 10
+    },
+    {
+      "id": "quantization",
+      "inference_time_ms": 50,
+      "overlap_actions": 0,
+      "trials": 100,
+      "successes": 80,
+      "successful_chunk_count_mean": 12
+    },
+    {
+      "id": "async",
+      "inference_time_ms": 100,
+      "overlap_actions": 3,
+      "trials": 100,
+      "successes": 80,
+      "successful_chunk_count_mean": 12
+    },
+    {
+      "id": "combined",
+      "inference_time_ms": 50,
+      "overlap_actions": 3,
+      "trials": 100,
+      "successes": 80,
+      "successful_chunk_count_mean": 16
+    }
+  ]
+}

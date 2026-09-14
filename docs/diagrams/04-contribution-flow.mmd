@@ -1,0 +1,46 @@
+flowchart TB
+    accTitle: Contribution And Simulator Fork Workflow
+    accDescr: 实线箭头表示工作推进或合并前置依赖，虚线表示模板支撑、可选贡献或交接恢复。已有的是协作文件和 CPU 契约校验；模拟器 fork 尚未建立，远端 CI 与强制审阅规则尚未启用，图示为后续工作流程。
+
+    existing_protocol["已有：协作模板 / CPU 校验<br/>远端规则待启用"]
+    task_card["Issue 指定 owner / reviewer<br/>范围 / 依赖 / 验收"]
+    task_branch["独立分支或 worktree<br/>AI 局部修改 + 人工检查"]
+    main_draft["主仓 Draft PR<br/>先准备 adapter / 配置"]
+    needs_fork{"确需修改依赖源码？"}
+
+    subgraph simulator_fork["模拟器 fork · 后续按需建立"]
+        fork_pr["许可允许时提交 fork PR<br/>最小源码改动 + 环境测试"]
+        fork_merge["fork 审阅并合并<br/>保留公开可获取 SHA"]
+    end
+
+    pin_dependency["主仓更新 gitlink<br/>锁定环境 / 资产版本"]
+    collect_evidence["提供相关验证证据<br/>CPU + 必要集成测试"]
+    main_review["主仓 reviewer 审查<br/>关联 diff / 契约 / 证据"]
+    main_merge["维护者合并主仓<br/>记录主仓与依赖版本"]
+    handoff["Issue / PR 内填写交接摘要<br/>事实 / 失败 / 下一步"]
+    upstream_pr["可选：另向上游提 PR<br/>不阻塞主仓合并"]
+
+    existing_protocol -.->|"模板与检查入口"| task_card
+    task_card -->|"明确任务范围"| task_branch
+    task_branch -->|"提交可审阅改动"| main_draft
+    main_draft -->|"按任务判定"| needs_fork
+    needs_fork -->|"否：用公开 API / adapter"| collect_evidence
+    needs_fork -->|"是：进入依赖仓"| fork_pr
+    fork_pr -->|"相关测试与审阅通过"| fork_merge
+    fork_merge -->|"合并后 SHA"| pin_dependency
+    pin_dependency -->|"更新同一个主仓 PR"| collect_evidence
+    collect_evidence -->|"证据可复现"| main_review
+    main_review -->|"非作者批准 / 检查通过"| main_merge
+    main_draft -.->|"暂停或换人"| handoff
+    handoff -.->|"复现后继续"| task_branch
+    fork_merge -.->|"通用改进可另投"| upstream_pr
+
+    classDef process fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef dependency fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef decision fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef existing fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+
+    class task_card,task_branch,main_draft,pin_dependency,collect_evidence,main_review,main_merge process
+    class fork_pr,fork_merge,upstream_pr dependency
+    class needs_fork decision
+    class existing_protocol,handoff existing

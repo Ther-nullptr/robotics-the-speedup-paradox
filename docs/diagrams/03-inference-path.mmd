@@ -1,0 +1,48 @@
+flowchart TB
+    accTitle: Planned Model Inference Path
+    accDescr: 全部推理节点均为目标设计，当前仅实现 schema、validator、tests 和协作文件。实线沿请求或数据流方向，虚线表示状态依赖、加载依赖或离线验收取证；验收不在每次请求热路径内。
+
+    observation["Observation 快照<br/>来源 ID / 时间域"]
+    weights["权重与量化配置<br/>checkpoint / pack 版本"]
+
+    subgraph policy_adapter["PolicyAdapter · 计划中"]
+        preprocess["模型专用预处理<br/>图像 / prompt / 归一化"]
+        model_graph["模型图与迭代语义<br/>vision / flow / DiT 等"]
+        model_state["模型专用 cache / RNG<br/>scope / reset / 失效规则"]
+        decode_action["动作解码与反归一化<br/>单位 / horizon / 有效区间"]
+    end
+
+    subgraph execution_backend["Backend · 计划中"]
+        prepare_weights["加载期 prepare / pack<br/>按需生成常驻权重"]
+        dispatch{"能力与执行分派<br/>shape / dtype / device"}
+        optimized_run["已选后端执行<br/>fusion 按 profile 选择"]
+        reference_run["Reference fallback<br/>保持约定并记录原因"]
+    end
+
+    action_chunk["ActionChunk<br/>实际完成信号 / 输出生命周期"]
+    validation["离线分层验收 · 待实现<br/>数值误差 / policy 延迟 / 任务质量"]
+
+    observation -->|"输入快照"| preprocess
+    preprocess -->|"模型输入"| model_graph
+    model_state -.->|"状态读写契约"| model_graph
+    model_graph -->|"计算请求与状态约束"| dispatch
+    weights -->|"初始化输入"| prepare_weights
+    prepare_weights -.->|"权重与布局依赖"| dispatch
+    dispatch -->|"支持且已选择"| optimized_run
+    dispatch -->|"显式允许才回退"| reference_run
+    optimized_run -->|"模型输出"| decode_action
+    reference_run -->|"参考输出"| decode_action
+    decode_action -->|"可消费动作"| action_chunk
+    action_chunk -.->|"固定输入与闭环证据"| validation
+    optimized_run -.->|"实际 kernel / 耗时"| validation
+    reference_run -.->|"对照证据"| validation
+
+    classDef adapter fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef backend fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef evidence fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef artifact fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#1f2937
+
+    class preprocess,model_graph,model_state,decode_action adapter
+    class prepare_weights,dispatch,optimized_run,reference_run backend
+    class validation evidence
+    class observation,weights,action_chunk artifact

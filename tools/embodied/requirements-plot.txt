@@ -1,0 +1,2 @@
+# Optional dependencies for plot_trajectory.py only; metrics use the standard library.
+matplotlib>=3.8,<4
