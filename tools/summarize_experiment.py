@@ -270,7 +270,6 @@ def markdown_report(report, per_task=False):
         for title, key, count in [
             ("All episodes (observed)", "all_episodes", stats["episodes"]),
             ("Success only", "successful_episodes", stats["successes"]),
-            ("Failure only (observed)", "failed_episodes", stats["failures"]),
             ("All episodes (failure budget)", "failure_penalized", stats["episodes"]),
         ]:
             item = stats[key]
@@ -278,11 +277,8 @@ def markdown_report(report, per_task=False):
                 f"| {title} | {count} | {number(item['total_control_steps'])} | {number(item['mean_control_steps'])} |"
             )
         penalty = stats["failure_penalized"]
-        lines += [
-            "",
-            f"Success contribution to the overall mean (successful step total / all episodes): {number(penalty['successful_contribution_mean'])}.",
-        ]
         if penalty["status"] != "available":
+            lines.append("")
             lines.append(
                 "Failure-budget statistics unavailable for tasks: "
                 + ", ".join(label(name) for name in penalty["missing_budget_tasks"])
@@ -334,12 +330,8 @@ def csv_report(report, per_task=False):
             "all_mean_control_steps",
             "success_total_control_steps",
             "success_mean_control_steps",
-            "failure_total_control_steps",
-            "failure_mean_control_steps",
             "failure_penalized_total_control_steps",
             "failure_penalized_mean_control_steps",
-            "success_contribution_mean",
-            "failure_contribution_mean",
             "trial_weight",
             "success_weight",
             "penalty_status",
@@ -365,7 +357,6 @@ def csv_report(report, per_task=False):
             for key in (
                 "all_episodes",
                 "successful_episodes",
-                "failed_episodes",
                 "failure_penalized",
             ):
                 values += [
@@ -373,8 +364,6 @@ def csv_report(report, per_task=False):
                     stats[key]["mean_control_steps"],
                 ]
             values += [
-                penalty["successful_contribution_mean"],
-                penalty["failed_contribution_mean"],
                 stats.get("trial_weight"),
                 stats.get("success_weight"),
                 penalty["status"],

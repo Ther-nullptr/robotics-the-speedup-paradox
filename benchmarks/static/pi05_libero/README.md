@@ -149,7 +149,7 @@ $$
 
 ## 汇总实验控制步数
 
-运行正常结束后自动生成 `episode-summary.md` 和 `episode-summary.json`，汇总全体实际步数、仅成功/仅失败步数、失败按预算惩罚的统计，以及成功部分对全体均值的贡献。汇总同时保留样本数、成功数和SR；`coverage.json` 中的 `max_primitive_steps` 提供本次控制步数预算。
+运行正常结束后自动生成 `episode-summary.md` 和 `episode-summary.json`。终端、Markdown和CSV汇总展示全体实际步数、仅成功步数和失败按预算惩罚的统计；JSON仍保留失败样本的原始步数与加权分量用于复核，不作为报告中的独立效率指标。汇总同时保留样本数、成功数和SR；`coverage.json` 中的 `max_primitive_steps` 提供本次控制步数预算。
 
 也可以用CPU工具重新查看已有结果；无需启动模型或模拟器。从仓库根目录运行：
 
