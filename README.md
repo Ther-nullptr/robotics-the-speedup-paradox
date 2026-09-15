@@ -39,6 +39,7 @@ python -m pytest -q
 | [架构](docs/architecture.md) / [图稿源码](docs/diagrams/README.md) | 模块边界及可重建的架构图 |
 | [数据契约](docs/protocols/artifacts.md) / [schemas](schemas/README.md) | manifest/trace格式及校验范围 |
 | [组合实验](docs/protocols/composable-experiments.md) / [加速比口径](docs/protocols/speedup-metrics.md) | 同模型任务下的方案比较与计算 |
+| [实验步数汇总](tools/summarize_experiment.py) / [统计口径](docs/protocols/speedup-metrics.md#8-控制步数统计与实验汇总) | 从episode记录汇总全体/成功控制步数及失败预算惩罚；多个运行分别输出 |
 | [轨迹小工具](tools/embodied/README.md) | 路径、速度、加速度、jerk和绘图 |
 | [仿真协议](docs/protocols/simulation.md) / [多后端](docs/protocols/simulator-backends.md) / [依赖修改](docs/protocols/simulator-dependencies.md) | 时钟、环境推进、版本与fork接入 |
 | [模型接口](docs/protocols/model-adapters.md) / [后端状态](docs/protocols/backend-state.md) / [可视化](docs/protocols/visualization.md) | adapter、cache/reset、事件与帧映射 |

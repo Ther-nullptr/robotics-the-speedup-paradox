@@ -146,6 +146,21 @@ def paper_contract(options):
     return module.paper_async_contract(options)
 
 
+def write_episode_summary(output, ledger):
+    source = Path(__file__).resolve().parents[3] / "tools/summarize_experiment.py"
+    spec = importlib.util.spec_from_file_location(
+        "_robotics_experiment_summary", source
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    report = module.write_run_summary(output, ledger.rows, max_steps=ledger.max_steps)
+    print(module.markdown_report(report))
+    return {
+        "markdown": str(output / "episode-summary.md"),
+        "json": str(output / "episode-summary.json"),
+    }
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -483,6 +498,10 @@ def build_plan(args):
         "timing_tool_sha256": file_hash(
             Path(__file__).resolve().parents[3] / "tools/compare_speedups.py"
         ),
+        "summary_tools_sha256": {
+            name: file_hash(Path(__file__).resolve().parents[3] / "tools" / name)
+            for name in ("summarize_experiment.py", "episode_statistics.py")
+        },
         "case": options,
         "sources": {key: value["identity"] for key, value in sources.items()},
         "checkpoint": {
@@ -640,7 +659,7 @@ def execute(plan):
                 output,
                 plan["identity"]["case"]["episodes"],
                 video_recorder=recorder,
-            ):
+            ) as episode_ledger:
                 evaluator.main()
             if recorder is not None:
                 manifest["video"]["files"] = recorder.paths
@@ -651,6 +670,8 @@ def execute(plan):
         if audit.get("status") != "passed":
             raise RuntimeError("Trial ended without a successful checkpoint audit")
         read_object(required_file(output / "eval_results.json"))
+        manifest["max_primitive_steps"] = episode_ledger.max_steps
+        manifest["summary_files"] = write_episode_summary(output, episode_ledger)
         manifest["status"] = "completed"
     except BaseException as exc:
         manifest["status"] = "failed"

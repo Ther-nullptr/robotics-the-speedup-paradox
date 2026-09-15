@@ -147,6 +147,28 @@ $$
 
 检查W4A4时改为 `--scheme w4a4` 并选择新目录；每个scheme在独立进程运行。`--profile`记录各shape的实际CUDA kernel名称，不测时延。输出 `report.json` 中的 `functional_pass` 仅表示该功能检查通过，不表示已建立精度门槛或测得加速。
 
+## 汇总实验控制步数
+
+运行正常结束后自动生成 `episode-summary.md` 和 `episode-summary.json`，汇总全体实际步数、仅成功/仅失败步数、失败按预算惩罚的统计，以及成功部分对全体均值的贡献。汇总同时保留样本数、成功数和SR；`coverage.json` 中的 `max_primitive_steps` 提供本次控制步数预算。
+
+也可以用CPU工具重新查看已有结果；无需启动模型或模拟器。从仓库根目录运行：
+
+```bash
+# 新结果自动读取预算；显示各任务明细
+python tools/summarize_experiment.py --input runs/static/pi05_libero/sync-001 --per-task
+
+# 旧libero_object结果缺少预算字段时，显式提供280步
+python tools/summarize_experiment.py \
+  --input runs/static/pi05_libero/sync-001 runs/static/pi05_libero/paper-async-001 \
+  --max-steps 280 --per-task --output results/pi05-step-comparison.csv
+```
+
+`--input` 也接受 `episodes.jsonl` 文件，多个运行分别汇总。默认输出Markdown，可用 `--format json` 或 `--format csv`，也可由 `--output` 扩展名选择格式；目标文件须不存在。JSON始终包含各任务，Markdown/CSV以 `--per-task` 展开。不同任务预算可重复指定 `--task-max-steps TASK=LIMIT`，覆盖通用预算。未提供失败预算时惩罚项为null，不猜测观测最大值。
+
+全体均值以总episode数为分母，成功均值以成功数为分母；跨任务分别按总样本数和成功数加权。零成功时成功均值为null；“成功步数总和/全体episode数”只是成功贡献。控制步数不等于时间或模型调用数，完整定义见 [统计口径](../../../docs/protocols/speedup-metrics.md#8-控制步数统计与实验汇总)。
+
+未完成或失败的运行需显式加 `--allow-partial`，结果标为 `partial`；裸ledger缺少完成元数据时标为 `unverified`。完整状态还会核对伴随manifest、coverage与ledger的一致性；手动生成汇总不会将不完整运行改成完成。
+
 ## JSON各自做什么
 
 普通运行使用上述命令行；JSON用于保留可复用设置和自动记录结果，不要求逐项手填。
@@ -168,7 +190,8 @@ $$
 | `checkpoint-load.json` | 加载覆盖、tied-weight别名与失败原因 |
 | `eval_results.json` | 外部evaluator的评测结果 |
 | `episodes.jsonl` | 每个实际任务/初态的成功标记、首次终止步数与环境seed |
-| `coverage.json` | 已完成/预期episode数、各任务初态覆盖及审计状态 |
+| `coverage.json` | 已完成/预期episode数、各任务初态覆盖、控制步数预算 `max_primitive_steps` 及审计状态 |
+| `episode-summary.md` / `episode-summary.json` | 正常结束时生成的控制步数统计；区分全体、成功、失败与失败预算惩罚 |
 | `videos/<task>/*.mp4` | 启用录制时的完整episode视频；路径与帧信息同时进入评测结果 |
 | `failure.json` | 实际执行失败时的错误与traceback |
 

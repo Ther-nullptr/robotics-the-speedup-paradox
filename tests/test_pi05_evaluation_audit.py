@@ -113,6 +113,16 @@ def test_capped_budget_is_not_silently_called_complete(tmp_path):
         ledger.begin([[("task", "instruction", [0])]])
 
 
+def test_actual_control_step_budget_is_saved_in_coverage(tmp_path):
+    ledger = api().EpisodeLedger(tmp_path, 1)
+    ledger.begin([[("task", "instruction", [0])]], max_steps=280)
+    assert ledger.max_steps == 280
+    assert (
+        json.loads((tmp_path / "coverage.json").read_text())["max_primitive_steps"]
+        == 280
+    )
+
+
 @pytest.mark.parametrize("record_video", [False, True])
 def test_context_audits_batches_fixes_descriptions_and_restores_hooks(
     tmp_path, record_video
@@ -146,7 +156,7 @@ def test_context_audits_batches_fixes_descriptions_and_restores_hooks(
             render_callback(env)
         return {"done": [[True]], "success": [[True]]}
 
-    def policy(env_cfg, policy, schedule, max_episodes_rendered=0):
+    def policy(env_cfg, policy, schedule, max_episodes_rendered=0, max_steps=17):
         assert max_episodes_rendered == 0
         for env in envs:
             evaluator.rollout(
@@ -197,3 +207,7 @@ def test_context_audits_batches_fixes_descriptions_and_restores_hooks(
     assert evaluator.eval_policy is policy and evaluator.rollout is rollout
     assert evaluator.make_lerobot_libero_env is original_factory
     assert all(env.closed and env.resets == 1 for env in envs)
+    assert (
+        json.loads((tmp_path / "coverage.json").read_text())["max_primitive_steps"]
+        == 17
+    )

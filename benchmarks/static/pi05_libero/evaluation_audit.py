@@ -48,10 +48,14 @@ class EpisodeLedger:
         self.expected = set()
         self.rows = []
         self.seen = set()
+        self.max_steps = None
 
-    def begin(self, schedule):
+    def begin(self, schedule, max_steps=None):
         if self.schedule is not None:
             raise RuntimeError("evaluation audit accepts one schedule per run")
+        if max_steps is not None and (type(max_steps) is not int or max_steps <= 0):
+            raise ValueError("max_steps must be a positive integer")
+        self.max_steps = max_steps
         self.schedule = schedule
         pairs = [
             (name, int(ep))
@@ -119,6 +123,7 @@ class EpisodeLedger:
             "status": status,
             "expected_episodes": self.expected_episodes,
             "completed_episodes": len(self.rows),
+            "max_primitive_steps": self.max_steps,
             "successes": sum(row["success"] for row in self.rows),
             "tasks": tasks,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -199,7 +204,10 @@ def evaluation_audit(
 
     def audited_policy(*args, **kwargs):
         bound = inspect.signature(original_policy).bind(*args, **kwargs)
-        ledger.begin(bound.arguments["schedule"])
+        bound.apply_defaults()
+        ledger.begin(
+            bound.arguments["schedule"], max_steps=bound.arguments.get("max_steps")
+        )
         groups.extend(
             (index, episode)
             for index, batch in enumerate(ledger.schedule)
