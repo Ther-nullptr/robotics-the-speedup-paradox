@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib
 import importlib.metadata
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -71,14 +72,28 @@ def source_identity(root):
 def load_options(path):
     defaults = read_object(DEFAULT_CONFIG)
     overrides = read_object(path)
-    unknown = set(overrides) - set(defaults)
+    unknown = set(overrides) - (set(defaults) | {"async_delay"})
     if unknown:
         raise ValueError(f"Unknown case options: {sorted(unknown)}")
     options = {**defaults, **overrides}
+    # Canonical n-prime; retain the old upstream spelling only as an input alias.
+    if "async_delay" in overrides:
+        delay = overrides["async_delay"]
+        if type(delay) is not int or delay < 0:
+            raise ValueError("async_delay must be a nonnegative integer")
+        if "overlap_actions" in overrides and (
+            type(overrides["overlap_actions"]) is not int
+            or overrides["overlap_actions"] != delay
+        ):
+            raise ValueError("async_delay and overlap_actions disagree")
+        options["overlap_actions"] = delay
+        del options["async_delay"]
+    if "schedule" not in overrides and options["overlap_actions"] != 0:
+        options["schedule"] = "paper_async"
     for name in ("episodes", "batch_size", "n_action_steps", "num_inference_steps"):
         if type(options[name]) is not int or options[name] < 1:
             raise ValueError(f"{name} must be a positive integer")
-    for name in ("seed", "async_delay"):
+    for name in ("seed", "overlap_actions"):
         if type(options[name]) is not int or options[name] < 0:
             raise ValueError(f"{name} must be a nonnegative integer")
     for name, default in defaults.items():
@@ -104,7 +119,18 @@ def load_options(path):
         raise ValueError("quant_selected_profile must be a string or null")
     if options["quant_ladder"] != "none" and options["compile_model"]:
         raise ValueError("Quantized smoke runs require compile_model=false")
+    paper_contract(options)
     return options
+
+
+def paper_contract(options):
+    # Resolve our own helper by file, including under runpy/spawn imports.
+    spec = importlib.util.spec_from_file_location(
+        "pi05_paper_async_contract", Path(__file__).with_name("paper_async.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.paper_async_contract(options)
 
 
 def build_parser():
@@ -211,7 +237,7 @@ def build_plan(args):
         "eval.batch_size": options["batch_size"],
         "eval.runtime_stack": "lerobot",
         "eval.quant_ladder": options["quant_ladder"],
-        "eval.async_delay": options["async_delay"],
+        "eval.async_delay": options["overlap_actions"],
         "eval.action_quant": 1,
         "eval.delay_state_with_observation": True,
         "policy.device": "cuda",
@@ -294,8 +320,11 @@ def build_plan(args):
     identity = {
         "entrypoint_sha256": {
             name: file_hash(Path(__file__).with_name(name))
-            for name in ("run.py", "load_guard.py", "case.json")
+            for name in ("run.py", "load_guard.py", "paper_async.py", "case.json")
         },
+        "timing_tool_sha256": file_hash(
+            Path(__file__).resolve().parents[3] / "tools/compare_speedups.py"
+        ),
         "case": options,
         "sources": {key: value["identity"] for key, value in sources.items()},
         "checkpoint": {
@@ -321,7 +350,8 @@ def build_plan(args):
         "libero_config_dir": str(libero_config),
         "output_dir": str(output),
         "gpu": args.gpu,
-        "schedule": "history_observation" if options["async_delay"] else "sync",
+        "schedule": options["schedule"],
+        "paper_async": paper_contract(options),
         "upstream_arguments": [
             f"--{key}={str(value).lower() if isinstance(value, bool) else value}"
             for key, value in arguments.items()
@@ -378,6 +408,9 @@ def execute(plan):
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    (output / "paper-async.json").write_text(
+        json.dumps(plan["paper_async"], indent=2) + "\n"
+    )
     original_argv = sys.argv[:]
     original_path = sys.path[:]
     original_cwd = Path.cwd()

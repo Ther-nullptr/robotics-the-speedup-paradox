@@ -53,6 +53,36 @@ def _ratio(numerator: float, denominator: float, name: str) -> float:
     return _positive(numerator / denominator, name)
 
 
+def chunk_timing(inference_time_ms, n_actions, action_time_ms, overlap_actions) -> dict:
+    """Estimate a scalar steady-state cycle; this does not measure wall time.
+
+    Inference and action times must be finite positive scalars. Overlap is an
+    integer count of primitive actions from zero through ``n_actions``. A zero
+    residual is valid when the overlap window covers all inference time.
+    """
+    inference_ms = _positive(inference_time_ms, "inference_time_ms")
+    n_actions = _integer(n_actions, "n_actions", 1)
+    action_time_ms = _positive(action_time_ms, "action_time_ms")
+    overlap_actions = _integer(overlap_actions, "overlap_actions")
+    if overlap_actions > n_actions:
+        raise ValueError("overlap_actions must be <= n_actions")
+    action_ms = _product(n_actions, action_time_ms, "action execution time")
+    overlap_ms = (
+        _product(overlap_actions, action_time_ms, "overlap time")
+        if overlap_actions
+        else 0.0
+    )
+    hidden_ms = min(inference_ms, overlap_ms)
+    residual_ms = inference_ms - hidden_ms
+    # Equivalent to I+n*A-min(I,nprime*A), avoiding cancellation of n*A.
+    cycle_ms = _positive(action_ms + residual_ms, "cycle")
+    return {
+        "hidden_inference_time_ms": hidden_ms,
+        "residual_inference_time_ms": residual_ms,
+        "cycle_time_ms": cycle_ms,
+    }
+
+
 def _validate(payload) -> tuple[dict, list[dict], dict]:
     if not isinstance(payload, dict):
         raise ValueError("input must be a JSON object")
@@ -125,11 +155,10 @@ def _missing_stat(run: dict, field: str, *, baseline: bool = False) -> str | Non
 def compare_speedups(payload: dict) -> dict:
     """Compute ratios for one user-declared comparable case, without filling gaps."""
     common, runs, baseline = _validate(payload)
-    action_ms = _product(
-        common["n_actions"], common["action_time_ms"], "action execution time"
-    )
     baseline_inference = baseline["inference_time_ms"]
-    baseline_cycle = _positive(baseline_inference + action_ms, "baseline cycle")
+    baseline_cycle = chunk_timing(
+        baseline_inference, common["n_actions"], common["action_time_ms"], 0
+    )["cycle_time_ms"]
     baseline_sr = baseline["successes"] / baseline["trials"]
     chunk_field = "successful_chunk_count_mean"
     task_field = "successful_task_time_mean_ms"
@@ -143,15 +172,13 @@ def compare_speedups(payload: dict) -> dict:
     rows = []
     for run in runs:
         inference_ms = run["inference_time_ms"]
-        overlap_ms = (
-            _product(run["overlap_actions"], common["action_time_ms"], "overlap time")
-            if run["overlap_actions"]
-            else 0.0
+        timing = chunk_timing(
+            inference_ms,
+            common["n_actions"],
+            common["action_time_ms"],
+            run["overlap_actions"],
         )
-        hidden_ms = min(inference_ms, overlap_ms)
-        residual_ms = inference_ms - hidden_ms
-        # Equivalent to I+n*A-min(I,nprime*A), avoiding cancellation of n*A.
-        cycle_ms = _positive(action_ms + residual_ms, f"{run['id']} cycle")
+        cycle_ms = timing["cycle_time_ms"]
         missing_chunks = _missing_stat(run, chunk_field)
         missing_task = _missing_stat(run, task_field)
         task_estimate = (
@@ -188,9 +215,7 @@ def compare_speedups(payload: dict) -> dict:
                     task_field: run[task_field],
                 },
                 "paper_steady_state": {
-                    "hidden_inference_time_ms": hidden_ms,
-                    "residual_inference_time_ms": residual_ms,
-                    "cycle_time_ms": cycle_ms,
+                    **timing,
                     "successful_task_time_mean_ms": task_estimate,
                 },
                 "speedup_inference": _ratio(

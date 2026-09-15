@@ -1,8 +1,10 @@
 # π0.5＋LIBERO 静态 case
 
-[run.py](run.py) 是本 case 的正式启动入口，使用 [case.json](case.json) 固定评估设置，调用用户提供的兼容 VLASH sim evaluator，并选择原生 LeRobot π0.5 policy 和同源 processors。当前先提供同步基线；不使用 VLASH 微调 checkpoint，也不做预测状态替换。
+[run.py](run.py) 是本 case 的正式启动入口，使用 [case.json](case.json) 固定评估设置，调用用户提供的兼容 VLASH sim evaluator，并选择原生 LeRobot π0.5 policy 和同源 processors。支持同步基线和《The Speedup Paradox》的静态 `paper_async` 抽象，可与量化配置组合；不使用 VLASH 微调 checkpoint，也不做预测状态替换。
 
-正式 `run.py` 入口已完成 `libero_object` 的1个episode，157个控制步后成功。随后，同checkpoint仅将文本第0层down projection替换为W8A8，1个episode在138步后成功，运行记录确认安装了1个W8A8包装层。这些是加载、替换与闭环连通性smoke，不是完整任务集SR、性能对照或全模型W8A8质量验证。W4A4仅完成单Linear功能小试；真实 `pure_async` 尚未实现。
+正式 `run.py` 入口已完成 `libero_object` 的1个同步episode，157个控制步后成功。随后，同checkpoint仅将文本第0层down projection替换为W8A8，1个同步episode在138步后成功，运行记录确认安装了1个W8A8包装层。这些是加载、替换与闭环连通性smoke，不是完整任务集SR、性能对照或全模型W8A8质量验证。W4A4仅完成单Linear功能小试。
+
+`paper_async` 已以原精度、`n′=2` 完成同case的1个episode，200个控制步后成功，加载审计通过；运行记录包含论文异步约定。该次未采集对应推理profile，周期仍为 `null`，不报告加速比。量化与论文异步组合尚未进行闭环验证。
 
 ## 运行前准备
 
@@ -38,11 +40,39 @@ python benchmarks/static/pi05_libero/run.py \
 | seed | `42` |
 | n_action_steps / num_inference_steps | `5` / `10` |
 | runtime_stack / compile_model | `lerobot` / `false` |
-| async_delay / action_quant | `0` / `1` |
+| schedule / overlap_actions | `sync` / `0` |
+| action_quant | `1` |
 | delay_state_with_observation | `true` |
+| paper_action_time_ms | `1000 / 30`，仅用于论文周期估算 |
+| paper_inference_time_ms / paper_inference_time_source | `null` / `null`，等待同配置的推理profile |
 | quant_ladder | `none` |
 
-配置中的 `async_delay` 是历史观测步数，不是后台推理并发或毫秒延迟注入。若将其设为正数，图像和 state 一起使用历史样本；默认0表示不施加历史偏移。本入口固定要求 `delay_state_with_observation=true`、`action_quant=1`，不允许分别替换图像/state或合并多步动作。`action_quant` 是外部评估器的动作合并参数，不是权重量化位宽。
+## 论文异步抽象
+
+在上述命令中改用新输出目录，并添加 `--config benchmarks/static/pi05_libero/paper-async.case.json`，即可启用 [论文异步配置](paper-async.case.json)：
+
+```json
+{
+  "schedule": "paper_async",
+  "overlap_actions": 2
+}
+```
+
+`overlap_actions` 对应论文的 $n'$，范围为 $0\le n'\le n$；$n$ 是实际执行的 `n_action_steps`（默认5），不是模型预测的50步。入口将它映射到外部 evaluator 的 `async_delay`：控制步 $t$ 使用 $t-n'$ 的历史观测，策略在需要生成新chunk时接收该输入。这是论文B.1使用的静态异步近似，验收不要求建立并发worker。[论文§3.1与B.1](https://arxiv.org/html/2606.28529v2)
+
+本 case 固定 `delay_state_with_observation=true`，图像和 state 使用同一历史快照；历史不足时使用当前观测。这两项是当前case的明确约定，论文未逐项规定。`action_quant=1` 保证历史步数对应原始控制步；这是动作合并参数，与模型量化位宽无关。旧配置 `async_delay` 仍作为 `overlap_actions` 的输入别名；两者冲突时拒绝运行。仅指定正的 `overlap_actions` 或旧别名时自动选择 `paper_async`，显式 `sync` 必须为0。
+
+[paper_async.py](paper_async.py) 与 [加速比工具](../../../tools/compare_speedups.py) 复用同一个周期公式：
+
+$$
+C(n')=T_{\mathrm{inf}}+nT_{\mathrm{act}}-\min(T_{\mathrm{inf}},n'T_{\mathrm{act}}).
+$$
+
+默认 `paper_action_time_ms=1000/30` 取论文π0.5静态设置的30 Hz作为估算参数；它不设置LIBERO物理步长、控制频率或视频帧率。提供 `paper_inference_time_ms` 时必须同时填写非空 `paper_inference_time_source`，说明同模型、精度、设备及输入口径的推理profile来源；入口记录该声明，不验证来源文件。未提供推理时延时仍可评估任务，但周期及残余等待时间保持 `null`，状态为 `requires_inference_profile`。
+
+周期与残余等待属于 `paper_model` 时间域。外部 evaluator 的 `eval_s` 是实际串行评估墙钟耗时，不能替代该周期；公式残余等待也不等于观测年龄。相对固定baseline的加速比仍通过共享工具按 [加速比协议](../../../docs/protocols/speedup-metrics.md) 计算；本入口不从episode步数推造模型调用数或任务加速比。
+
+量化与 `paper_async` 分别配置。例如，在单层W8A8 case JSON 中加入上述两个字段，再提供相同量化依赖，即可组合运行；组合支持不代表其成功率或加速已验证。
 
 ## 单 Linear 量化 smoke
 
@@ -84,10 +114,11 @@ python benchmarks/static/pi05_libero/quant_smoke.py \
 | 文件 | 内容 |
 | --- | --- |
 | `case-manifest.json` | case 配置与指纹、外部 source 提交/dirty 身份、checkpoint/processor/tokenizer 文件身份和运行环境元数据 |
+| `paper-async.json` | 同步或论文异步约定、$n'$、历史/state规则、推理时延来源及论文周期估计；manifest中同时保存 |
 | `checkpoint-load.json` | checkpoint 加载覆盖、tied-weight 别名与失败原因 |
 | `eval_results.json` | 外部 evaluator 的本次评估结果 |
 | `failure.json` | 实际执行失败时的错误与 traceback |
 
 `case-manifest.json` 使用独立的 `pi05-libero-smoke-v1` 格式，不是 `schemas/run-manifest.schema.json` 的通用 manifest v1，不能直接按该通用 schema 校验。当前入口记录上述来源、模型资源及运行元数据，尚未生产通用的逐 action trace。加载尚未开始便失败时，不一定产生 `checkpoint-load.json`；dry-run 只打印计划。输出均为本地实验产物，不作为默认提交内容。
 
-后续 `pure_async` 应在本 case 已验证的 policy/processor 与环境接口上单独接入请求、执行队列和时钟，不从 `async_delay` 名称推断它已经存在。任务范围与共享交接写入 Issue/PR；协议见 [组合实验](../../../docs/protocols/composable-experiments.md) 和 [模型接入](../../../docs/protocols/model-adapters.md)。
+真实并发执行可作为后续独立扩展，届时再接入请求、执行队列和实测时钟；它不是本次 `paper_async` 的前置条件。任务范围与共享交接写入 Issue/PR；协议见 [组合实验](../../../docs/protocols/composable-experiments.md) 和 [模型接入](../../../docs/protocols/model-adapters.md)。

@@ -1,6 +1,6 @@
 # AI 协作约定
 
-本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO试跑入口。尚未内置模型、量化kernel或真实异步运行时；不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
+本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO试跑入口。静态异步采用论文抽象 `paper_async`；尚未内置模型或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
 
 ## 开始工作
 
@@ -23,6 +23,7 @@
 - 默认CPU检查和公共文档链接须在干净克隆中自包含。模型试跑可通过显式参数使用case声明的外部源码、checkpoint和资产；不得硬编码、自动扫描或发布父目录私有资料、凭据、本机路径和外部软链接。
 - 未来通用核心不依赖机器人专用 adapter；Torch、CUDA 和模拟器不进入当前 CPU 契约工具的默认依赖。
 - 区分 wall time、sim time、device duration、result release、boundary wait 和 observation age。
+- 静态 `paper_async` 按论文历史观测 `t−n′` 与周期模型验收，`history_observation` 是其实现方式；真实并发是可选扩展。`paper_async` 仅为独立case manifest标签，不改变通用v1 schema中 `async` 的既有语义。state/warmup规则由case显式声明；论文模型的 `Tact` 不修改physics dt，缺少 `Tinf` 时不生成周期/加速比，host `eval_s` 不充当论文周期。
 - 保留真实 backend、dtype 和 fallback 证据。fake quant、GPU enqueue 返回和单个 GEMM 数字不代表真实端到端加速。
 - 不在公共PR CI中调用实验室GPU runner或下载模型权重。模型/GPU试跑使用独立case环境并记录来源、设备和验证范围；CPU检查不依赖这些外部资源。
 - 使用已有风格，避免无关重构和全仓格式化。新增测试针对行为和失败边界；文字修订无需新测试。

@@ -97,11 +97,91 @@ def test_rejects_invalid_or_out_of_scope_options(inputs, options):
     assert not inputs["output_dir"].exists()
 
 
-def test_historical_delay_is_not_reported_as_real_async(inputs):
+def test_legacy_delay_selects_paper_async(inputs):
     inputs["config"].write_text(json.dumps({"async_delay": 2}))
     result = invoke(inputs, "--dry-run")
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["schedule"] == "history_observation"
+    plan = json.loads(result.stdout)
+    assert plan["schedule"] == "paper_async"
+    assert plan["identity"]["case"]["overlap_actions"] == 2
+    assert "async_delay" not in plan["identity"]["case"]
+    assert "--eval.async_delay=2" in plan["upstream_arguments"]
+
+
+@pytest.mark.parametrize("overlap", [0, 2, 5])
+def test_paper_async_maps_n_prime_to_primitive_history_steps(inputs, overlap):
+    inputs["config"].write_text(
+        json.dumps({"schedule": "paper_async", "overlap_actions": overlap})
+    )
+    result = invoke(inputs, "--dry-run")
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    contract = plan["paper_async"]
+    assert plan["schedule"] == "paper_async"
+    assert contract["n_prime"] == overlap
+    assert contract["n_actions"] == 5
+    assert contract["state_policy"] == "same_snapshot"
+    assert contract["history_fallback"] == "current_until_available"
+    assert contract["timing"]["status"] == "requires_inference_profile"
+    assert contract["timing"]["cycle_time_ms"] is None
+    assert contract["timing"]["action_time_ms"] == pytest.approx(1000 / 30)
+    assert f"--eval.async_delay={overlap}" in plan["upstream_arguments"]
+    assert "--eval.action_quant=1" in plan["upstream_arguments"]
+    assert not inputs["output_dir"].exists()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"schedule": "sync", "overlap_actions": 2},
+        {"schedule": "sync", "async_delay": 2},
+        {"overlap_actions": 2, "async_delay": 3},
+        {"overlap_actions": 2, "async_delay": True},
+        {"overlap_actions": True, "async_delay": 1},
+        {"overlap_actions": 6},  # Bound by executed n=5, even with predicted H=50.
+        {"async_delay": 6},
+        {"overlap_actions": True},
+        {"schedule": "async"},
+        {"paper_inference_time_ms": 100},
+        {"paper_action_time_ms": 0},
+    ],
+)
+def test_invalid_paper_async_options_fail_before_execution(inputs, options):
+    inputs["config"].write_text(json.dumps(options))
+    result = invoke(inputs, "--dry-run")
+    assert result.returncode != 0
+    assert not inputs["output_dir"].exists()
+
+
+def test_overlap_alias_and_canonical_config_have_same_identity(inputs):
+    plans = []
+    for options in ({"overlap_actions": 2}, {"async_delay": 2}):
+        inputs["config"].write_text(json.dumps(options))
+        result = invoke(inputs, "--dry-run")
+        assert result.returncode == 0, result.stderr
+        plans.append(json.loads(result.stdout))
+    assert plans[0]["case_fingerprint"] == plans[1]["case_fingerprint"]
+
+
+def test_paper_cycle_estimate_requires_explicit_latency_provenance(inputs):
+    inputs["config"].write_text(
+        json.dumps(
+            {
+                "schedule": "paper_async",
+                "overlap_actions": 2,
+                "paper_action_time_ms": 20,
+                "paper_inference_time_ms": 100,
+                "paper_inference_time_source": "synthetic unit-test fixture",
+            }
+        )
+    )
+    result = invoke(inputs, "--dry-run")
+    assert result.returncode == 0, result.stderr
+    timing = json.loads(result.stdout)["paper_async"]["timing"]
+    assert timing["clock_domain"] == "paper_model"
+    assert timing["cycle_time_ms"] == 160
+    assert timing["residual_inference_time_ms"] == 60
+    assert timing["inference_time_source"] == "synthetic unit-test fixture"
 
 
 def test_quantization_requires_explicit_dependencies(inputs):

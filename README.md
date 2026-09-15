@@ -1,8 +1,10 @@
 # Robotics: The Speedup Paradox
 
-面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO试跑入口](benchmarks/static/pi05_libero/README.md)。试跑调用用户提供的兼容外部源码和checkpoint；内置模型后端、量化kernel与真实异步运行时仍待实现。
+面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO试跑入口](benchmarks/static/pi05_libero/README.md)。试跑调用用户提供的兼容外部源码和checkpoint，支持同步基线与论文静态抽象 `paper_async`；内置模型后端和量化kernel仍待实现。
 
 实验按静态和动态任务分别组织。每个case绑定模型、权重、任务、环境及协议，只在已验证的范围内选择量化或调度方案。
+
+静态异步按 The Speedup Paradox 的历史观测实验与周期模型定义：`paper_async` 通过历史快照实现观测陈旧，并用声明的推理/动作时间估计重叠收益。真实推理与控制并发可作为独立扩展，不是该模式的验收前提。论文周期、宿主运行时间及仿真时间分别记录，见 [仿真协议](docs/protocols/simulation.md)。
 
 | 实验入口 | 当前规划 |
 | --- | --- |
