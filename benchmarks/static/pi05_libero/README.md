@@ -102,9 +102,11 @@ $$
 
 此前正式入口完成过 `libero_object` 的同步单episode（157步成功）、同checkpoint单个文本层W8A8的同步单episode（138步成功），以及原精度 `paper_async`、n′=2的单episode（200步成功）。这些运行使用旧reset语义，仅证明加载/替换与闭环连通性，不能作为修正初态协议后的全量基线。加载审计通过，W8A8记录确认安装1个对应包装层；论文异步试跑未提供推理profile，不报告周期或加速比。量化与论文异步组合尚未闭环验证；W4A4仅完成单Linear功能小试。
 
-当前运行记录 `environment_protocol=explicit_initial_state_v1`：[环境适配器](libero_adapter.py) 先重置底层环境，再应用指定初态和settling；只有显式reset推进初态列表，成功后的内部autoreset被抑制，终止环境在下一次显式reset前保持吸收态。[评估审计](evaluation_audit.py) 从环境读取实际任务/初态ID，逐episode记录并检查完整覆盖、重复及汇总一致性。全量结果须等待该协议下的评估完成后报告，不能沿用上述旧smoke数字。
+当前运行记录 `environment_protocol=explicit_initial_state_v1`：[环境适配器](libero_adapter.py) 先重置底层环境，再应用指定初态和settling；只有显式reset推进初态列表，成功后的内部autoreset被抑制，终止环境在下一次显式reset前保持吸收态。[评估审计](evaluation_audit.py) 从环境读取实际任务/初态ID，逐episode记录并检查完整覆盖、重复及汇总一致性。
 
-这些是加载、替换和闭环连通性smoke，不是完整任务集SR、性能对照或全模型量化质量验收。用户须自行提供兼容资源，本仓库不下载或内置：
+该协议下已完成 `libero_object` 的全量两组评估：每组10任务×50初态，同checkpoint、seed42、batch10、n=5、10个flow推理步、原精度且不编译。同步成功494/500（98.8%），论文异步n′=2成功464/500（92.8%）；两组实际初态均各出现一次，加载与覆盖审计通过。这是该固定设置下的任务结果，未采集对应推理profile，因此不报告论文加速比。启动上述实验时设置 `--episodes 500 --batch-size 10`，运行产物仍保存在调用者指定的本地目录。
+
+全量验证目前限于上述原精度两组；量化检查仍为加载、替换和连通性smoke，不是全模型量化质量验收。用户须自行提供兼容资源，本仓库不下载或内置：
 
 - VLASH sim checkout须支持 `runtime_stack=lerobot`、历史观测及入口所用参数。已跑通来源为 `d618e497eb6279fc9b95a78e1fa5635a51626a26` 工作树，含未提交改动，不能等同于原始上游 `sim/libero` 分支；每次运行记录实际source身份与dirty状态。
 - 使用普通、任务匹配的LeRobot π0.5 LIBERO checkpoint，以及同源processor、normalization和tokenizer。指定路径不代替预处理兼容性验证。
