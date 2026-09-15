@@ -424,7 +424,14 @@ def build_plan(args):
     identity = {
         "entrypoint_sha256": {
             name: file_hash(Path(__file__).with_name(name))
-            for name in ("run.py", "load_guard.py", "paper_async.py", "case.json")
+            for name in (
+                "run.py",
+                "load_guard.py",
+                "paper_async.py",
+                "case.json",
+                "libero_adapter.py",
+                "evaluation_audit.py",
+            )
         },
         "timing_tool_sha256": file_hash(
             Path(__file__).resolve().parents[3] / "tools/compare_speedups.py"
@@ -445,7 +452,8 @@ def build_plan(args):
     ).hexdigest()
     return {
         "format": "pi05-libero-smoke-v1",
-        "run_kind": "functional_smoke",
+        "run_kind": "functional_smoke" if options["episodes"] == 1 else "evaluation",
+        "environment_protocol": "explicit_initial_state_v1",
         "case_fingerprint": fingerprint,
         "identity": identity,
         "sources": sources,
@@ -502,6 +510,8 @@ def audit_quantized_modules(models, ladder):
 def execute(plan):
     # Load our own standard-library guard before exposing external imports.
     from load_guard import checkpoint_load_guard
+    from libero_adapter import make_lerobot_libero_env
+    from evaluation_audit import evaluation_audit
 
     output = Path(plan["output_dir"])
     output.mkdir(parents=True, exist_ok=False)
@@ -556,7 +566,13 @@ def execute(plan):
         with checkpoint_load_guard(
             PI05Policy, output / "checkpoint-load.json"
         ) as loaded_models:
-            evaluator.main()
+            with evaluation_audit(
+                evaluator,
+                make_lerobot_libero_env,
+                output,
+                plan["identity"]["case"]["episodes"],
+            ):
+                evaluator.main()
             manifest["quantized_modules"] = audit_quantized_modules(
                 loaded_models, plan["identity"]["case"]["quant_ladder"]
             )

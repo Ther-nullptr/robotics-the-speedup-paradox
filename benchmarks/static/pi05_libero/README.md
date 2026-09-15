@@ -100,7 +100,9 @@ $$
 
 ## 已验证范围与外部依赖
 
-正式入口已完成 `libero_object` 的同步基线单episode（157步成功）、同checkpoint单个文本层W8A8的同步单episode（138步成功），以及原精度 `paper_async`、n′=2的单episode（200步成功）。加载审计通过；W8A8运行记录确认安装1个对应包装层。论文异步试跑未提供推理profile，不报告周期或加速比。量化与论文异步组合尚未闭环验证；W4A4仅完成单Linear功能小试。
+此前正式入口完成过 `libero_object` 的同步单episode（157步成功）、同checkpoint单个文本层W8A8的同步单episode（138步成功），以及原精度 `paper_async`、n′=2的单episode（200步成功）。这些运行使用旧reset语义，仅证明加载/替换与闭环连通性，不能作为修正初态协议后的全量基线。加载审计通过，W8A8记录确认安装1个对应包装层；论文异步试跑未提供推理profile，不报告周期或加速比。量化与论文异步组合尚未闭环验证；W4A4仅完成单Linear功能小试。
+
+当前运行记录 `environment_protocol=explicit_initial_state_v1`：[环境适配器](libero_adapter.py) 先重置底层环境，再应用指定初态和settling；只有显式reset推进初态列表，成功后的内部autoreset被抑制，终止环境在下一次显式reset前保持吸收态。[评估审计](evaluation_audit.py) 从环境读取实际任务/初态ID，逐episode记录并检查完整覆盖、重复及汇总一致性。全量结果须等待该协议下的评估完成后报告，不能沿用上述旧smoke数字。
 
 这些是加载、替换和闭环连通性smoke，不是完整任务集SR、性能对照或全模型量化质量验收。用户须自行提供兼容资源，本仓库不下载或内置：
 
@@ -143,6 +145,8 @@ $$
 | `paper-async.json` | 同步/论文异步约定、n′、历史/state规则、推理时延来源及周期估计；manifest中同时保存 |
 | `checkpoint-load.json` | 加载覆盖、tied-weight别名与失败原因 |
 | `eval_results.json` | 外部evaluator的评测结果 |
+| `episodes.jsonl` | 每个实际任务/初态的成功标记、首次终止步数与环境seed |
+| `coverage.json` | 已完成/预期episode数、各任务初态覆盖及审计状态 |
 | `failure.json` | 实际执行失败时的错误与traceback |
 
 `schemas/` 下的JSON是格式定义，也无需作为每次运行的输入。此入口的manifest使用独立 `pi05-libero-smoke-v1` 格式，不是通用run-manifest v1，不能直接用其schema校验；目前尚未生产通用逐action trace。加载开始前失败时不一定有 `checkpoint-load.json`，dry-run只打印计划。输出均为本地实验产物，默认不提交Git。
