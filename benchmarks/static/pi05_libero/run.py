@@ -14,6 +14,7 @@ import importlib
 import importlib.metadata
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -97,6 +98,17 @@ def load_options(path, cli_options=None):
     for name in ("seed", "overlap_actions"):
         if type(options[name]) is not int or options[name] < 0:
             raise ValueError(f"{name} must be a nonnegative integer")
+    video_limit = options["video_episodes_per_task"]
+    if video_limit != "all" and (type(video_limit) is not int or video_limit < 0):
+        raise ValueError(
+            "video_episodes_per_task must be 'all' or a nonnegative integer"
+        )
+    if (
+        type(options["video_fps"]) not in (int, float)
+        or not math.isfinite(options["video_fps"])
+        or options["video_fps"] <= 0
+    ):
+        raise ValueError("video_fps must be a finite positive number")
     for name, default in defaults.items():
         if isinstance(default, bool) and type(options[name]) is not bool:
             raise ValueError(f"{name} must be a boolean")
@@ -199,6 +211,36 @@ def build_parser():
         action=argparse.BooleanOptionalAction,
         default=argparse.SUPPRESS,
     )
+    video = parser.add_argument_group("optional episode videos")
+    video_mode = video.add_mutually_exclusive_group()
+    video_mode.add_argument(
+        "--record-video",
+        action="store_const",
+        const="all",
+        dest="video_episodes_per_task",
+        default=argparse.SUPPRESS,
+        help="Record every evaluated episode from initial through terminal frame",
+    )
+    video_mode.add_argument(
+        "--no-record-video",
+        action="store_const",
+        const=0,
+        dest="video_episodes_per_task",
+        default=argparse.SUPPRESS,
+        help="Disable video (the default)",
+    )
+    video_mode.add_argument(
+        "--video-episodes-per-task",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Record the first N evaluated episodes per task; default 0 disables video",
+    )
+    video.add_argument(
+        "--video-fps",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Playback FPS (default 30); does not change simulator control timing",
+    )
     quant = parser.add_argument_group("quantization")
     selection = quant.add_mutually_exclusive_group()
     selection.add_argument(
@@ -262,6 +304,10 @@ def build_plan(args):
             )
             quant_profile = DEFAULT_CONFIG.with_name("quant-profiles.json")
     options = load_options(args.config, cli_options)
+    record_all = options["video_episodes_per_task"] == "all"
+    video_limit = (
+        options["episodes"] if record_all else options["video_episodes_per_task"]
+    )
     source = args.sim_source.expanduser().resolve()
     checkpoint = args.checkpoint.expanduser().resolve()
     tokenizer = args.tokenizer.expanduser().resolve()
@@ -431,6 +477,7 @@ def build_plan(args):
                 "case.json",
                 "libero_adapter.py",
                 "evaluation_audit.py",
+                "video_recorder.py",
             )
         },
         "timing_tool_sha256": file_hash(
@@ -464,6 +511,14 @@ def build_plan(args):
         "gpu": args.gpu,
         "schedule": options["schedule"],
         "paper_async": paper_contract(options),
+        "video": {
+            "enabled": video_limit > 0,
+            "record_all_episodes": record_all,
+            "max_episodes_per_task": video_limit,
+            "fps": options["video_fps"],
+            "camera": "native_primary",
+            "directory": str(output / "videos"),
+        },
         "upstream_arguments": [
             f"--{key}={str(value).lower() if isinstance(value, bool) else value}"
             for key, value in arguments.items()
@@ -512,6 +567,7 @@ def execute(plan):
     from load_guard import checkpoint_load_guard
     from libero_adapter import make_lerobot_libero_env
     from evaluation_audit import evaluation_audit
+    from video_recorder import EpisodeVideoRecorder
 
     output = Path(plan["output_dir"])
     output.mkdir(parents=True, exist_ok=False)
@@ -539,6 +595,8 @@ def execute(plan):
                 "TRANSFORMERS_OFFLINE": "1",
                 "LIBERO_CONFIG_PATH": plan["libero_config_dir"],
                 "VLASH_PALIGEMMA_TOKENIZER": plan["tokenizer"],
+                # Capture through our audited recorder, avoiding the external
+                # writer thread's swallowed errors and unnecessary frame collection.
                 "VLASH_MAX_EPISODES_RENDERED": "0",
             }
         )
@@ -563,6 +621,16 @@ def execute(plan):
             },
         }
         sys.argv = [str(expected), *plan["upstream_arguments"]]
+        recorder = (
+            EpisodeVideoRecorder(
+                output,
+                plan["video"]["max_episodes_per_task"],
+                plan["video"]["fps"],
+                evaluator.write_video,
+            )
+            if plan["video"]["enabled"]
+            else None
+        )
         with checkpoint_load_guard(
             PI05Policy, output / "checkpoint-load.json"
         ) as loaded_models:
@@ -571,8 +639,11 @@ def execute(plan):
                 make_lerobot_libero_env,
                 output,
                 plan["identity"]["case"]["episodes"],
+                video_recorder=recorder,
             ):
                 evaluator.main()
+            if recorder is not None:
+                manifest["video"]["files"] = recorder.paths
             manifest["quantized_modules"] = audit_quantized_modules(
                 loaded_models, plan["identity"]["case"]["quant_ladder"]
             )

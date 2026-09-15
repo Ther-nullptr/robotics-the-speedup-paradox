@@ -57,6 +57,23 @@ bash benchmarks/static/pi05_libero/run.sh \
 
 `--dry-run` 检查文件并打印解析后的计划，不导入GPU运行栈、不加载模型或启动模拟器，也不生成结果目录。预览成功不等于模型、设备或checkpoint数值正确。入口拒绝已有输出目录，避免混合不同实验结果。
 
+## 录制机器人完整执行视频
+
+在运行命令后添加 `--record-video`，即可录制本次实际评估的所有episode。每条视频从episode初始画面开始，包含成功、失败或超时的终止画面；成功和失败都会保存，使用环境的主相机。
+
+```bash
+bash benchmarks/static/pi05_libero/run.sh \
+  --schedule paper_async --overlap-actions 2 --quant none \
+  --episodes 1 --record-video \
+  --gpu 3 --output-dir runs/static/pi05_libero/video-001
+```
+
+默认关闭录制，也可显式传 `--no-record-video`。只想选取部分episode时，将 `--record-video` 换成 `--video-episodes-per-task 1`：每个参与评估的任务录前1条完整episode，录满后停止采帧。上述三个选项互斥。可选 `--video-fps 30` 设置播放帧率（默认30），不改变模拟器控制周期或论文计时参数。
+
+视频自动保存到 `<output-dir>/videos/<task>/init_<初态编号>_<success|fail>.mp4`。`eval_results.json` 的 `video_paths`、`video_metadata` 记录路径、任务/初态、帧数及播放帧率；manifest也记录录制设置和成功写出的路径。编码使用环境中的imageio及MP4/FFmpeg后端；写入失败会令运行明确报错。录制和编码会增加评估墙钟耗时。
+
+此前两组500-episode评估没有保存画面，现有结果保持原样，不补录或重跑。当前视频功能已覆盖CPU录制逻辑与入口测试，尚未重新运行模型验证实际闭环录像。
+
 ## 常用参数
 
 直接在上述命令后追加参数，例如 `--suite libero_object --episodes 10 --batch-size 1 --seed 42`。默认设置如下：
@@ -74,6 +91,9 @@ bash benchmarks/static/pi05_libero/run.sh \
 | `--schedule` | `sync` 或 `paper_async` |
 | `--overlap-actions` | 默认0，范围0到 `n-action-steps` |
 | `--quant` | `none` 或 `w8a8-single-layer` |
+| `--record-video` / `--no-record-video` | 录制所有实际评估episode / 关闭，默认关闭 |
+| `--video-episodes-per-task` | 可选非负整数，每任务最多录前N条完整episode，0关闭 |
+| `--video-fps` | 默认30，仅设置视频播放帧率 |
 | `--paper-action-time-ms` | `1000/30`，仅用于论文周期估计 |
 | `--paper-inference-time-ms` | 默认不提供，需同配置的推理profile |
 | `--paper-inference-time-source` | 提供推理时间时必填，说明其来源与口径 |
@@ -149,6 +169,7 @@ $$
 | `eval_results.json` | 外部evaluator的评测结果 |
 | `episodes.jsonl` | 每个实际任务/初态的成功标记、首次终止步数与环境seed |
 | `coverage.json` | 已完成/预期episode数、各任务初态覆盖及审计状态 |
+| `videos/<task>/*.mp4` | 启用录制时的完整episode视频；路径与帧信息同时进入评测结果 |
 | `failure.json` | 实际执行失败时的错误与traceback |
 
 `schemas/` 下的JSON是格式定义，也无需作为每次运行的输入。此入口的manifest使用独立 `pi05-libero-smoke-v1` 格式，不是通用run-manifest v1，不能直接用其schema校验；目前尚未生产通用逐action trace。加载开始前失败时不一定有 `checkpoint-load.json`，dry-run只打印计划。输出均为本地实验产物，默认不提交Git。

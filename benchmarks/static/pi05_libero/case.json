@@ -2,6 +2,8 @@
   "suite": "libero_object",
   "episodes": 1,
   "batch_size": 1,
+  "video_episodes_per_task": 0,
+  "video_fps": 30,
   "seed": 42,
   "n_action_steps": 5,
   "num_inference_steps": 10,

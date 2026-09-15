@@ -76,6 +76,60 @@ def test_dry_run_does_not_import_sources_or_create_outputs(inputs):
     assert "--eval.runtime_stack=lerobot" in plan["upstream_arguments"]
     assert "--eval.action_quant=1" in plan["upstream_arguments"]
     assert not inputs["output_dir"].exists()
+    assert plan["identity"]["case"]["video_episodes_per_task"] == 0
+
+
+def test_video_limit_can_be_set_directly_without_a_json_preset(inputs):
+    result = invoke(
+        inputs, "--video-episodes-per-task", "2", "--video-fps", "20", "--dry-run"
+    )
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["identity"]["case"]["video_episodes_per_task"] == 2
+    assert plan["video"]["enabled"] is True
+    assert plan["video"]["max_episodes_per_task"] == 2
+    assert plan["video"]["fps"] == 20
+    assert plan["video"]["directory"] == str(inputs["output_dir"] / "videos")
+    assert not inputs["output_dir"].exists()
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5])
+def test_video_limit_rejects_invalid_values(inputs, value):
+    inputs["config"].write_text(json.dumps({"video_episodes_per_task": value}))
+    result = invoke(inputs, "--dry-run")
+    assert result.returncode != 0
+    assert "video_episodes_per_task" in result.stderr
+
+
+def test_cli_can_disable_video_from_json(inputs):
+    inputs["config"].write_text(json.dumps({"video_episodes_per_task": 3}))
+    result = invoke(inputs, "--video-episodes-per-task", "0", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["video"]["enabled"] is False
+
+
+def test_record_video_selects_every_evaluated_episode(inputs):
+    result = invoke(inputs, "--record-video", "--episodes", "500", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["video"]["record_all_episodes"] is True
+    assert plan["video"]["max_episodes_per_task"] == 500
+    assert plan["identity"]["case"]["video_episodes_per_task"] == "all"
+
+
+def test_no_record_video_overrides_an_all_video_preset(inputs):
+    inputs["config"].write_text('{"video_episodes_per_task":"all"}')
+    result = invoke(inputs, "--no-record-video", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["video"]["enabled"] is False
+
+
+@pytest.mark.parametrize("value", [0, -1, True, float("nan"), float("inf")])
+def test_video_fps_rejects_invalid_values(inputs, value):
+    inputs["config"].write_text(json.dumps({"video_fps": value}))
+    result = invoke(inputs, "--dry-run")
+    assert result.returncode != 0
+    assert "video_fps" in result.stderr
 
 
 @pytest.mark.parametrize(

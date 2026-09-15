@@ -155,7 +155,9 @@ class EpisodeLedger:
 
 
 @contextmanager
-def evaluation_audit(evaluator, factory, output, expected_episodes):
+def evaluation_audit(
+    evaluator, factory, output, expected_episodes, video_recorder=None
+):
     """Install the explicit-reset adapter and audit rollouts, restoring on exit."""
     original_policy = evaluator.eval_policy
     original_rollout = evaluator.rollout
@@ -177,6 +179,11 @@ def evaluation_audit(evaluator, factory, output, expected_episodes):
         bound.arguments["task_description"] = [
             entry[1] for entry in ledger.schedule[batch_index]
         ]
+        if video_recorder is not None:
+            bound.arguments["render_callback"] = video_recorder.start(
+                ledger.schedule[batch_index], rollout_index
+            )
+        first_row = len(ledger.rows)
         data = original_rollout(*bound.args, **bound.kwargs)
         ledger.record(
             batch_index,
@@ -186,6 +193,8 @@ def evaluation_audit(evaluator, factory, output, expected_episodes):
             data,
             bound.arguments.get("seeds"),
         )
+        if video_recorder is not None:
+            video_recorder.finish(ledger.rows[first_row:])
         return data
 
     def audited_policy(*args, **kwargs):
@@ -196,8 +205,16 @@ def evaluation_audit(evaluator, factory, output, expected_episodes):
             for index, batch in enumerate(ledger.schedule)
             for episode in range(max(len(ids) for _, _, ids in batch))
         )
-        result = original_policy(*args, **kwargs)
+        if (
+            video_recorder is not None
+            and "max_episodes_rendered" in inspect.signature(original_policy).parameters
+        ):
+            bound.arguments["max_episodes_rendered"] = 0
+        result = original_policy(*bound.args, **bound.kwargs)
         ledger.finish(result)
+        if video_recorder is not None and video_recorder.paths:
+            result["video_paths"] = video_recorder.paths
+            result["video_metadata"] = video_recorder.records
         return result
 
     evaluator.eval_policy = audited_policy

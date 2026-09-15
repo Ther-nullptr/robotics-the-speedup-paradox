@@ -113,7 +113,10 @@ def test_capped_budget_is_not_silently_called_complete(tmp_path):
         ledger.begin([[("task", "instruction", [0])]])
 
 
-def test_context_audits_batches_fixes_descriptions_and_restores_hooks(tmp_path):
+@pytest.mark.parametrize("record_video", [False, True])
+def test_context_audits_batches_fixes_descriptions_and_restores_hooks(
+    tmp_path, record_video
+):
     class Vector:
         def __init__(self, name):
             self.name = name
@@ -136,12 +139,15 @@ def test_context_audits_batches_fixes_descriptions_and_restores_hooks(tmp_path):
 
     envs = [Vector("a"), Vector("b")]
 
-    def rollout(env, policy, task_description=None, seeds=None):
+    def rollout(env, policy, task_description=None, seeds=None, render_callback=None):
         env.reset(seed=seeds)
         assert task_description == [env.name + " instruction"]
+        if render_callback is not None:
+            render_callback(env)
         return {"done": [[True]], "success": [[True]]}
 
-    def policy(env_cfg, policy, schedule):
+    def policy(env_cfg, policy, schedule, max_episodes_rendered=0):
+        assert max_episodes_rendered == 0
         for env in envs:
             evaluator.rollout(
                 env, None, task_description=["wrong accumulated list"], seeds=[42]
@@ -156,11 +162,38 @@ def test_context_audits_batches_fixes_descriptions_and_restores_hooks(tmp_path):
         eval_policy=policy, rollout=rollout, make_lerobot_libero_env=original_factory
     )
     replacement = object()
-    with api().evaluation_audit(evaluator, replacement, tmp_path, 2):
+
+    class Recorder:
+        def __init__(self):
+            self.paths = {}
+            self.records = []
+            self.captured = []
+
+        def start(self, batch, rollout_index):
+            assert rollout_index == 0
+            return lambda env: self.captured.append(env.name)
+
+        def finish(self, rows):
+            assert len(rows) == 1
+            task = rows[0]["task"]
+            self.paths[task] = [task + ".mp4"]
+            self.records.append({"task": task})
+
+    recorder = Recorder() if record_video else None
+    with api().evaluation_audit(
+        evaluator, replacement, tmp_path, 2, video_recorder=recorder
+    ):
         assert evaluator.make_lerobot_libero_env is replacement
-        evaluator.eval_policy(
-            None, None, [[("a", "a instruction", [0])], [("b", "b instruction", [0])]]
+        result = evaluator.eval_policy(
+            None,
+            None,
+            [[("a", "a instruction", [0])], [("b", "b instruction", [0])]],
+            max_episodes_rendered=7 if record_video else 0,
         )
+        if record_video:
+            assert recorder.captured == ["a", "b"]
+            assert result["video_paths"] == {"a": ["a.mp4"], "b": ["b.mp4"]}
+            assert result["video_metadata"] == [{"task": "a"}, {"task": "b"}]
     assert evaluator.eval_policy is policy and evaluator.rollout is rollout
     assert evaluator.make_lerobot_libero_env is original_factory
     assert all(env.closed and env.resets == 1 for env in envs)
