@@ -12,8 +12,8 @@ body:
     id: related_work
     attributes:
       label: 关联工作
-      description: 关联 Issue/PR 或长期方向；新任务可写“无”。
-      placeholder: "例如：CPU 调度语义；关联 #12"
+      description: 填实验路径/case（static/<case>、dynamic/<case>或shared）及关联 Issue/PR；无关联可写“无”。
+      placeholder: "例如：static/pi05_libero；关联 #12"
     validations:
       required: true
   - type: input

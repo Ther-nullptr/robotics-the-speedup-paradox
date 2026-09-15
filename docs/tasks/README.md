@@ -2,15 +2,19 @@
 
 这里保留长期方向。具体owner、范围、依赖、验收和接力状态放在Issue/PR；[任务模板](../templates/task.md) 可直接复制使用。阶段任务草稿留本地，不作为发布内容。
 
-| 方向 | 前置条件 | 主要交付 |
+从 [静态任务](../../benchmarks/static/README.md) 或 [动态任务](../../benchmarks/dynamic/README.md) 选择case，再定义本次接入或优化任务；共享工具标记为 `shared`。同一case绑定模型、权重和任务环境，不因新增adapter自动扩展组合。
+
+| 归属 | 方向 | 前置条件与主要交付 |
 | --- | --- | --- |
-| 数据契约演进 | 真实生产者/消费者需求 | 兼容规则、合法/非法样例 |
-| CPU调度语义 | 当前事件契约 | 可手算的sync/async/延迟时间线 |
-| Trace viewer | 当前合成事件 | 动作来源与时间映射、只读展示 |
-| Cosmos-Policy接入 | 模型来源、预处理与权重 | 固定输入动作对齐、量化站点清单 |
-| LingBot-VA接入 | 模型来源与cache语义 | KV读写/重置、动作对齐 |
-| π0.5接入 | reference与normalization | policy接口、可选backend边界 |
-| 多模拟器接入 | 调度语义与对应环境 | 独立adapter、世界推进与终止验收 |
-| 端侧优化案例 | 真实adapter和设备profile | 局部优化、数值及完整入口证据 |
+| 静态 | π0.5＋LIBERO | 任务匹配权重/processor，固定输入动作对齐，同步闭环与纯异步 |
+| 静态 | Cosmos-Policy＋LIBERO/RoboCasa | 各自case的权重、统计量和环境，动作对齐与优化站点 |
+| 静态 | LingBot-VA | 先明确任务组合，再验证KV读写/reset与动作 |
+| 动态 | DynamicVLA＋DOM | 单场景时钟、历史观测、延迟与动作生效、终止/reset |
+| 动态 | [Kinetix原生策略与rollout](../../benchmarks/dynamic/kinetix/README.md) | 绑定checkpoint/关卡和观测动作类型，再验证carry/PRNG、JAX步进、延迟与终止；独立于VLA执行器 |
+| shared | 数据契约与CPU事件语义 | 按真实需求扩展契约；可手算的时间线与错误边界 |
+| shared | Trace viewer与分析工具 | 动作来源、时间映射、按case比较指标 |
+| 对应case / shared | 端侧优化 | 固定模型任务和设备profile；数值与完整入口证据，共享部分再抽取 |
 
 无需先复现整篇论文。协议与CPU工具可独立推进；实际性能和模型质量结论须等待相应实现与设备证据。
+
+其他模拟器在任务需求明确后加入相应case。两条路径各自验收控制循环和baseline，公共底层变更应说明受影响的case。

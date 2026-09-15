@@ -1,10 +1,12 @@
 # 贡献与接力开发
 
-从 [README](README.md) 配置环境，使用 [工作路线](docs/tasks/README.md) 选择方向。当前工具可在CPU运行，参与开发不要求先复现论文。
+从 [README](README.md) 配置环境，使用 [工作路线](docs/tasks/README.md) 选择方向。任务实验从 [静态入口](benchmarks/static/README.md) 或 [动态入口](benchmarks/dynamic/README.md) 选择case；底层工具任务标记 `shared`。当前工具可在CPU运行，参与开发不要求先复现论文。
 
 ## Issue、PR与交接
 
 一个任务有一位owner和一位reviewer。**Issue记录范围、依赖、验收和状态；PR记录实现、验证与兼容变化。** 可复制 [任务模板](docs/templates/task.md) 填写Issue，不要求额外提交一份阶段任务卡。
+
+Issue/PR注明 `static/<case>`、`dynamic/<case>` 或 `shared`。前两类分别维护任务配置、控制协议和baseline；shared任务列出受影响的case。不为新模型自动生成所有模拟器组合，也不为两条路径复制通用工具。
 
 开始工作时确认分支、基线commit和已有修改；使用短分支，例如 `feat/issue-12-clock-case`。多人使用独立checkout/worktree。公共接口的变化先合并规范，再并行修改调用方。
 

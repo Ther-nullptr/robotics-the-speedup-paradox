@@ -3,7 +3,11 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.cache/
+.ipynb_checkpoints/
 .coverage
+.coverage.*
 htmlcov/
 build/
 dist/
@@ -15,6 +19,19 @@ artifacts/
 checkpoints/
 datasets/
 runs/
+/logs/
+/outputs/
+/results/
+/profiles/
+/tmp/
+/temp/
+*.log
+*.nsys-rep
+*.ncu-rep
+*.qdrep
+*.qdstrm
+*.prof
+*.pstats
 *.safetensors
 *.ckpt
 *.pt
@@ -36,3 +53,9 @@ runs/
 /docs/diagrams/gallery.md
 /docs/diagrams/render-manifest.json
 /tools/embodied/examples/trajectory-comparison.png
+
+# Local editor backups and OS metadata.
+*~
+*.swp
+*.swo
+.DS_Store

@@ -3,6 +3,7 @@
 将这份摘要放入关联 Issue/PR，供下一位成员接手；本地草稿无需提交。
 
 - 关联 Issue / PR：
+- 实验路径 / case：`static/<case>`、`dynamic/<case>` 或 `shared`
 - Owner / 下一位接手人：
 - 分支 / commit：
 - 状态：进行中 / 等待外部条件 / 待审阅 / 完成

@@ -4,11 +4,13 @@
 
 把一次运行定义为：**固定实验案例 + 模型变换/执行配置 + 调度策略 + 时间/延迟模式**。量化改变 policy 的数值与执行路径；异步改变请求、动作和环境推进的组织方式。二者可以组合，但不能用同一个 `apply(model)` 接口混合处理。
 
+静态任务与动态任务分别组织case和baseline。一个case预先绑定模型、checkpoint、processor、任务、模拟器及允许的协议；本文的组合发生在该case支持的优化轴内，不枚举模型与模拟器的笛卡尔积。新增后端或模型不自动建立跨任务兼容性。
+
 ## 1. 先固定实验案例
 
 | 固定项 | 需要保存的内容 |
 | --- | --- |
-| 基础模型 | 架构、同源 checkpoint hash、adapter、预处理/action normalization |
+| 基础模型 | 架构、同源 checkpoint hash、adapter、processor版本/hash、预处理/action normalization |
 | 任务场景 | simulator及依赖版本、任务定义、资产、初始状态集合、外部扰动 |
 | 执行语义 | control/physics dt、预测 horizon、实际执行长度、采样/接管/欠载规则 |
 | 生成参数 | denoise/refinement steps、基础采样策略；不与量化一起隐式改变 |
@@ -30,9 +32,13 @@
 
 调度轴中的 sync 指推理与动作的启动/执行关系；世界在等待期间暂停还是继续演化，是独立的 `world_progression`。比较四组时固定它。例如动态比较中同步等待新动作时，世界仍按声明的 hold 控制推进；不能只让异步组的世界运动。
 
+静态任务可采用async，动态任务可采用sync。静态任务仍可进行在线闭环和正常物理演化，不等于离线forward或冻结世界。
+
 异步策略的重规划间隔、overlap深度、预测horizon和实际执行动作数也分别命名。可以有意扫描这些参数，但不能都藏在一个 `async=True` 中。
 
 ## 3. 第一轮采用2×2实验矩阵
+
+以下矩阵适用于一个同时支持这些精度和调度变体的case。未实现或不兼容的变体显式标记，不为了填满矩阵更换模型、任务或权重。静态、动态case各自比较，使用相同指标定义并不意味着共用同一个baseline分母或直接合并任务时间。
 
 | run | 精度/执行路径 | 调度 | 回答的问题 |
 | --- | --- | --- | --- |
@@ -75,6 +81,8 @@ result = runner.run(policy, shared_case.scenario, shared_case.trials)
 ```
 
 PolicyAdapter 的 observation→action 契约不因量化而改变。量化只替换符合精度计划的内部执行路径；async runner通过worker/完成句柄组织同一个policy，保留输出可消费时刻、输入快照和episode来源。
+
+上面的worker/action-queue示意适用于对应VLA case。Kinetix保留 [原生policy与JAX rollout](../../benchmarks/dynamic/kinetix/README.md)，在自己的执行路径验证优化；公共配置轴不强制它使用Torch量化kernel、进程worker或动作块。异步设备派发与编译批量执行不自动等同于模型/环境重叠，不兼容的优化组合标记为不支持。
 
 每个实验变体独立构建或从干净状态恢复，不把同一个已被原地量化的模型接着当FP16 baseline；不在四组间共享可写KV、workspace、queue或随机数发生器。单实例非线程安全时限制一个在途请求或做实例隔离。
 

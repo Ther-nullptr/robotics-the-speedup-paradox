@@ -2,6 +2,8 @@
 
 范围包含 LIBERO、RoboCasa、RoboTwin、Kinetix，以及 DynamicVLA 的 Dynamic Object Manipulation（DOM）benchmark。当前均为接入规划，没有安装或运行模拟器。它们跨越不同物理引擎和执行模型，共享实验与数据契约，各自保留运行时实现。
 
+任务入口分为 [静态](../../benchmarks/static/README.md) 与 [动态](../../benchmarks/dynamic/README.md)。下表描述后端能力与依赖，不是模型兼容矩阵；每个case单独绑定模型/权重、任务和环境版本。两条路径各自维护控制循环，模拟器分类由具体任务决定。
+
 ## 后端矩阵
 
 | 后端 | 上游层次与修改归属 | 需要固定和验收的差异 |
@@ -37,6 +39,8 @@ DOM 官方推荐分别准备模型和 Isaac Lab 仿真环境，评估入口在 `
 **LIBERO/RoboCasa 等环境：** 优先用 adapter 与受支持参数控制步进。修改 task/scene 与修改 physics/control 分开提交；同 seed/action 的兼容检查限定在明确的软件/资产版本内，不承诺跨引擎逐位一致。
 
 **Kinetix：** 在 JAX 路径保留函数式 state、PRNG 和兼容 shape，延迟可以表达成 tick 或编译循环中的状态。不要求每个 physics step 回 Python 发 JSON/等待 RPC，否则会改变原本批量执行的性能。trace 可先写设备数组再批量导出，记录原始事件发生时间；compile/warmup、设备执行、同步、像素观测和展示分别测量。评估时关闭 auto-reset 或捕获 reset 前 terminal state，不能把下一 episode 的观测归给上一条动作。
+
+它的模型侧同样保留原生JAX/Flax策略、动作空间及可选recurrent carry，不套VLA action-chunk接口或Torch进程worker。policy、环境与rollout作为独立接入单元管理，详见 [Kinetix入口](../../benchmarks/dynamic/kinetix/README.md)。共享计时/事件含义不等于共用运行循环；单个编译rollout不能自动声明已测得模型与仿真真实并发。
 
 **DOM：** 原评估循环会非阻塞读取最新动作，无新动作时继续用上次动作或初始姿态推进环境。接入前保留并声明这一调度语义，随后通过独立协议再改变它；不能在外面叠一层未说明的等待/丢动作策略。接收“最新动作”也不能替代检查其来源观测和episode。运行慢于控制周期时要记录超期与实际推进，不把限频 sleep 当作物理时间追赶证明。[DOM 评估循环](https://github.com/hzxie/DynamicVLA/blob/bb702465fe3976ac853bc1fbed600668045909f2/simulations/evaluate.py#L270-L371)
 

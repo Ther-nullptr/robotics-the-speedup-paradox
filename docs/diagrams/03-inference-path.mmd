@@ -1,11 +1,11 @@
 flowchart TB
-    accTitle: Planned Model Inference Path
-    accDescr: 全部推理节点均为目标设计，当前仅实现 schema、validator、tests 和协作文件。实线沿请求或数据流方向，虚线表示状态依赖、加载依赖或离线验收取证；验收不在每次请求热路径内。
+    accTitle: Planned VLA Inference Path
+    accDescr: 本图描述VLA动作块推理的目标设计，不要求Kinetix原生RL路径采用相同输入输出。运行节点尚未实现。实线沿请求或数据流方向，虚线表示状态依赖、加载依赖或离线验收取证；验收不在每次请求热路径内。
 
     observation["Observation 快照<br/>来源 ID / 时间域"]
     weights["权重与量化配置<br/>checkpoint / pack 版本"]
 
-    subgraph policy_adapter["PolicyAdapter · 计划中"]
+    subgraph policy_adapter["VLA PolicyAdapter · 计划中"]
         preprocess["模型专用预处理<br/>图像 / prompt / 归一化"]
         model_graph["模型图与迭代语义<br/>vision / flow / DiT 等"]
         model_state["模型专用 cache / RNG<br/>scope / reset / 失效规则"]

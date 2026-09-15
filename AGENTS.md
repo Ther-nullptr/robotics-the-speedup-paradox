@@ -7,6 +7,15 @@
 1. 阅读 `README.md`、`CONTRIBUTING.md`、当前 Issue/PR 的任务范围及相关 `docs/protocols/` 文档。
 2. 确认 `git status --short`、分支和基线 commit，保留其他人的修改。任务范围以 Issue/PR 和用户最新指令为准。
 3. 先跑相关最小例子，再改变一个可观察行为。缺少设备、资产或已知实验参数时明确记录，不自动编造。
+4. 确认任务归属为 `static/<case>`、`dynamic/<case>` 或 `shared`；case入口在 `benchmarks/static/`、`benchmarks/dynamic/`。模型、权重、任务与环境按case绑定；新增adapter不意味着支持其他组合。静态/动态控制实现分别演进，共享底层工具。
+
+## 轻量化方法参考
+
+后续模型轻量化与推理基础设施工作优先参考外部skill `$edge-model-lightweight`，来源为 [edge-model-lightweight-skill](https://github.com/Ther-nullptr/edge-model-lightweight-skill)。按任务阅读其完整计时、profile、收益估算、算子/精度与流式质量指南；仓内 [edge-inference-optimization](.agents/skills/edge-inference-optimization/SKILL.md) 补充机器人case的具体约束。外部skill按访问权限独立安装，不是运行本仓CPU工具或CI的依赖。
+
+- 保留静态/动态case绑定、Kinetix原生JAX路径和各自控制协议；方法参考不要求统一模型输入、动作空间或执行器。
+- 原始实现、优化全精度和轻量化实现可分别比较；量化专项增量收益与主表相对固定case baseline的总收益分别命名，遵循 [加速比协议](docs/protocols/speedup-metrics.md)。
+- skill内的估算、示例和外部实测摘要只作方法参考，不作为本仓性能证据；实际结果仍需本case、目标设备及声明时间域的验证。实验过程记录继续按本仓版本管理边界留在本地或Issue/PR。
 
 ## 修改边界
 

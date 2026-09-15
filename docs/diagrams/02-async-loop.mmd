@@ -1,13 +1,13 @@
 sequenceDiagram
-    accTitle: Planned Asynchronous Control Loop
-    accDescr: Illustrative logical concurrency on one simulation timeline. An observation is sampled at zero, inference completes at 80 ms, and the next chunk starts after the old chunk ends at 120 ms. Boundary wait is zero while observation age is 120 ms. This is a planned protocol, not a measurement.
-    participant runner as ProtocolRunner
-    participant world as 执行循环（Runner 驱动）
+    accTitle: Planned Chunk-Handover Asynchronous Example
+    accDescr: This planned example applies only to cases that finish the current action chunk before handover. An observation is sampled at zero, inference completes at 80 ms, and the next chunk starts at 120 ms. Boundary wait is zero while observation age is 120 ms. DOM target replacement and native Kinetix JAX rollouts have their own execution protocols.
+    participant runner as 按块交接的 Runner
+    participant world as 该 case 的 ClockDriver
     participant model as Policy / Backend
     participant queue as ActionQueue
     participant trace as TraceSink
 
-    Note over runner,trace: 目标逻辑，尚未实现；旧 chunk 已在执行的局部时间轴
+    Note over runner,trace: 按块交接的手算示例，尚未实现；t=0 时旧 chunk 已在执行
     runner->>world: t=0：采样不可变 observation
     world-->>runner: obs_id + episode_id + sample_time
     runner-->>trace: observation_sampled
@@ -36,3 +36,4 @@ sequenceDiagram
     world-->>trace: action_started(t=120 ms, obs_id)
     Note over world,trace: boundary_wait = 0 ms；observation_age = 120 ms
     Note over runner,trace: 任意时刻 terminal：禁止新动作；在途结果隔离并 drain 后释放资源
+    Note over runner,trace: 仅适用于声明按块交接的 case；DOM 目标替换与 Kinetix JAX rollout 另定执行协议

@@ -1,6 +1,7 @@
 ## 问题与行为变化
 
 关联 Issue：
+实验路径 / case（`static/<case>`、`dynamic/<case>` 或 `shared`）：
 用一个输入、错误或时间线说明修改前后有什么不同：
 
 ## 验证

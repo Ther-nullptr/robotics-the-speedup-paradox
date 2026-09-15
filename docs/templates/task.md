@@ -3,6 +3,7 @@
 状态：planned / in-progress / ready-for-review / done
 
 - Owner / reviewer：
+- 实验路径 / case：`static/<case>`、`dynamic/<case>` 或 `shared`
 - 基线 commit：
 - 依赖 Issue / PR：
 - 关联协议及版本：
