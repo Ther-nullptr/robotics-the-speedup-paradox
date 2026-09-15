@@ -69,13 +69,12 @@ def source_identity(root):
     return identity
 
 
-def load_options(path):
+def load_options(path, cli_options=None):
     defaults = read_object(DEFAULT_CONFIG)
-    overrides = read_object(path)
+    overrides = read_object(path) if path is not None else {}
     unknown = set(overrides) - (set(defaults) | {"async_delay"})
     if unknown:
         raise ValueError(f"Unknown case options: {sorted(unknown)}")
-    options = {**defaults, **overrides}
     # Canonical n-prime; retain the old upstream spelling only as an input alias.
     if "async_delay" in overrides:
         delay = overrides["async_delay"]
@@ -86,8 +85,10 @@ def load_options(path):
             or overrides["overlap_actions"] != delay
         ):
             raise ValueError("async_delay and overlap_actions disagree")
-        options["overlap_actions"] = delay
-        del options["async_delay"]
+        overrides["overlap_actions"] = delay
+        del overrides["async_delay"]
+    overrides.update(cli_options or {})
+    options = {**defaults, **overrides}
     if "schedule" not in overrides and options["overlap_actions"] != 0:
         options["schedule"] = "paper_async"
     for name in ("episodes", "batch_size", "n_action_steps", "num_inference_steps"):
@@ -134,20 +135,105 @@ def paper_contract(options):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        allow_abbrev=False,
+        epilog="Experiment flags override --config, then case defaults. "
+        "Source paths may also be provided via ROBOTICS_* environment variables.",
+    )
+    paths = parser.add_argument_group("source and resource paths")
     for name in (
         "sim-source",
         "checkpoint",
         "tokenizer",
         "libero-config-dir",
-        "output-dir",
+        "quant-source",
+        "kernel-source",
     ):
-        parser.add_argument(f"--{name}", type=Path, required=True)
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+        env_name = "ROBOTICS_" + name.upper().replace("-", "_")
+        value = os.environ.get(env_name)
+        default = Path(value) if value and value.strip() else None
+        paths.add_argument(
+            f"--{name}",
+            type=Path,
+            default=default,
+            required=default is None and name not in {"quant-source", "kernel-source"},
+            help=f"Path; defaults to ${env_name} when set",
+        )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="New result directory (must not already exist)",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="Optional JSON preset; ordinary experiments can use flags only",
+    )
     parser.add_argument("--gpu", help="One physical GPU index or full GPU UUID")
-    parser.add_argument("--quant-source", type=Path)
-    parser.add_argument("--kernel-source", type=Path)
     parser.add_argument("--quant-profile", type=Path)
+    experiment = parser.add_argument_group("experiment options (override JSON)")
+    experiment.add_argument(
+        "--suite", choices=sorted(SUITES), default=argparse.SUPPRESS
+    )
+    experiment.add_argument(
+        "--schedule", choices=("sync", "paper_async"), default=argparse.SUPPRESS
+    )
+    for name in (
+        "episodes",
+        "batch-size",
+        "seed",
+        "n-action-steps",
+        "num-inference-steps",
+    ):
+        experiment.add_argument(f"--{name}", type=int, default=argparse.SUPPRESS)
+    experiment.add_argument(
+        "--overlap-actions",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Paper n-prime: primitive history steps, 0..n-action-steps",
+    )
+    experiment.add_argument(
+        "--compile-model",
+        action=argparse.BooleanOptionalAction,
+        default=argparse.SUPPRESS,
+    )
+    quant = parser.add_argument_group("quantization")
+    selection = quant.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--quant",
+        choices=("none", "w8a8-single-layer"),
+        help="Convenience preset; w8a8-single-layer changes TXT.B00.mlp.down only",
+    )
+    selection.add_argument(
+        "--quant-ladder",
+        choices=sorted(LADDERS),
+        default=argparse.SUPPRESS,
+        help="Advanced: use with an explicit profile",
+    )
+    quant.add_argument("--quant-selected-profile", default=argparse.SUPPRESS)
+    quant.add_argument(
+        "--quant-compute-dtype",
+        choices=("float16", "bfloat16", "float32"),
+        default=argparse.SUPPRESS,
+    )
+    for name in (
+        "quantize-vlm-text",
+        "quantize-vision-tower",
+        "quantize-diffusion-head",
+        "quantize-suffix-head",
+        "quantize-mm-projector",
+    ):
+        quant.add_argument(
+            f"--{name}",
+            action=argparse.BooleanOptionalAction,
+            default=argparse.SUPPRESS,
+        )
+    timing = parser.add_argument_group("optional paper timing estimate")
+    for name in ("paper-action-time-ms", "paper-inference-time-ms"):
+        timing.add_argument(f"--{name}", type=float, default=argparse.SUPPRESS)
+    timing.add_argument("--paper-inference-time-source", default=argparse.SUPPRESS)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -157,7 +243,25 @@ def build_parser():
 
 
 def build_plan(args):
-    options = load_options(args.config)
+    case_fields = read_object(DEFAULT_CONFIG)
+    cli_options = {
+        name: value for name, value in vars(args).items() if name in case_fields
+    }
+    quant_profile = args.quant_profile
+    if args.quant is not None:
+        if "quant_selected_profile" in cli_options or quant_profile is not None:
+            raise ValueError(
+                "--quant presets cannot be combined with custom profile flags; "
+                "use --quant-ladder for a custom profile"
+            )
+        if args.quant == "none":
+            cli_options.update(quant_ladder="none", quant_selected_profile=None)
+        else:
+            cli_options.update(
+                read_object(DEFAULT_CONFIG.with_name("w8a8-single-layer.case.json"))
+            )
+            quant_profile = DEFAULT_CONFIG.with_name("quant-profiles.json")
+    options = load_options(args.config, cli_options)
     source = args.sim_source.expanduser().resolve()
     checkpoint = args.checkpoint.expanduser().resolve()
     tokenizer = args.tokenizer.expanduser().resolve()
@@ -254,7 +358,7 @@ def build_plan(args):
             (
                 args.quant_source,
                 args.kernel_source,
-                args.quant_profile,
+                quant_profile,
                 options["quant_selected_profile"],
             )
         ):
@@ -263,7 +367,7 @@ def build_plan(args):
             )
         quant_source = args.quant_source.expanduser().resolve()
         kernel_source = args.kernel_source.expanduser().resolve()
-        profile = required_file(args.quant_profile.expanduser().resolve())
+        profile = required_file(quant_profile.expanduser().resolve())
         required_file(quant_source / "vlash/quantization/runtime_apply.py")
         required_file(kernel_source / "eval/quant_linear.py")
         profiles = read_object(profile).get("profiles", [])

@@ -184,6 +184,193 @@ def test_paper_cycle_estimate_requires_explicit_latency_provenance(inputs):
     assert timing["inference_time_source"] == "synthetic unit-test fixture"
 
 
+def test_cli_runs_paper_async_without_a_case_file(inputs):
+    inputs.pop("config")
+    result = invoke(
+        inputs,
+        "--schedule",
+        "paper_async",
+        "--overlap-actions",
+        "2",
+        "--episodes",
+        "3",
+        "--seed",
+        "7",
+        "--suite",
+        "libero_goal",
+        "--n-action-steps",
+        "4",
+        "--num-inference-steps",
+        "6",
+        "--quant",
+        "none",
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["schedule"] == "paper_async"
+    assert plan["identity"]["case"]["episodes"] == 3
+    assert plan["identity"]["case"]["seed"] == 7
+    assert "--eval.async_delay=2" in plan["upstream_arguments"]
+    assert "--env.task=libero_goal" in plan["upstream_arguments"]
+    assert "--policy.n_action_steps=4" in plan["upstream_arguments"]
+    assert "--policy.num_inference_steps=6" in plan["upstream_arguments"]
+    assert not inputs["output_dir"].exists()
+
+
+def test_cli_overrides_json_and_legacy_delay(inputs):
+    inputs["config"].write_text(json.dumps({"episodes": 4, "async_delay": 2}))
+    result = invoke(inputs, "--episodes", "2", "--overlap-actions", "3", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    options = json.loads(result.stdout)["identity"]["case"]
+    assert options["episodes"] == 2
+    assert options["overlap_actions"] == 3
+    assert "async_delay" not in options
+
+
+def test_cli_can_explicitly_turn_off_json_compile_and_quantization(inputs):
+    inputs["config"].write_text(
+        json.dumps(
+            {
+                "compile_model": True,
+                "quant_ladder": "fp16_to_w8a8",
+                "quant_selected_profile": "old-profile",
+            }
+        )
+    )
+    result = invoke(inputs, "--no-compile-model", "--quant", "none", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    options = json.loads(result.stdout)["identity"]["case"]
+    assert options["compile_model"] is False
+    assert options["quant_ladder"] == "none"
+    assert options["quant_selected_profile"] is None
+
+
+@pytest.mark.parametrize(
+    "option,value",
+    [
+        ("--overlap-actions", "6"),
+        ("--episodes", "0"),
+        ("--batch-size", "2"),
+        ("--quant", "w8a8"),
+        ("--paper-inference-time-ms", "100"),
+    ],
+)
+def test_cli_invalid_experiments_fail_preflight(inputs, option, value):
+    result = invoke(inputs, option, value, "--dry-run")
+    assert result.returncode != 0
+    assert not inputs["output_dir"].exists()
+
+
+def test_environment_paths_work_and_explicit_path_wins(inputs, monkeypatch):
+    cli_inputs = {"output_dir": inputs["output_dir"]}
+    for name in ("sim_source", "checkpoint", "tokenizer", "libero_config_dir"):
+        monkeypatch.setenv("ROBOTICS_" + name.upper(), str(inputs[name]))
+    monkeypatch.setenv(
+        "ROBOTICS_CHECKPOINT", str(inputs["checkpoint"].parent / "missing")
+    )
+    result = invoke(cli_inputs, "--checkpoint", str(inputs["checkpoint"]), "--dry-run")
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["checkpoint"] == str(inputs["checkpoint"])
+    assert plan["sources"]["sim"]["path"] == str(inputs["sim_source"])
+    assert not inputs["output_dir"].exists()
+
+
+def test_quant_preset_composes_with_paper_async_without_user_json(inputs, monkeypatch):
+    root = inputs["config"].parent
+    inputs.pop("config")
+    quant_source = root / "quant"
+    (quant_source / "vlash/quantization").mkdir(parents=True)
+    (quant_source / "vlash/quantization/runtime_apply.py").write_text("# fixture\n")
+    kernel_source = root / "kernel"
+    (kernel_source / "eval").mkdir(parents=True)
+    (kernel_source / "eval/quant_linear.py").write_text("# fixture\n")
+    monkeypatch.setenv("ROBOTICS_QUANT_SOURCE", str(quant_source))
+    monkeypatch.setenv("ROBOTICS_KERNEL_SOURCE", str(kernel_source))
+    result = invoke(
+        inputs,
+        "--quant",
+        "w8a8-single-layer",
+        "--schedule",
+        "paper_async",
+        "--overlap-actions",
+        "2",
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["schedule"] == "paper_async"
+    assert plan["identity"]["case"]["quant_selected_profile"] == "smoke_txt_b00_down"
+    assert "--eval.quant_ladder=fp16_to_w8a8" in plan["upstream_arguments"]
+    assert "--eval.async_delay=2" in plan["upstream_arguments"]
+    assert plan["identity"]["quant_profile"] is not None
+    assert not inputs["output_dir"].exists()
+    legacy = invoke(
+        inputs,
+        "--config",
+        str(ENTRY.with_name("w8a8-single-layer.case.json")),
+        "--quant-profile",
+        str(ENTRY.with_name("quant-profiles.json")),
+        "--schedule",
+        "paper_async",
+        "--overlap-actions",
+        "2",
+        "--dry-run",
+    )
+    assert legacy.returncode == 0, legacy.stderr
+    assert plan["case_fingerprint"] == json.loads(legacy.stdout)["case_fingerprint"]
+
+
+def test_cli_rejects_sync_with_positive_overlap(inputs):
+    result = invoke(inputs, "--schedule", "sync", "--overlap-actions", "2", "--dry-run")
+    assert result.returncode != 0
+    assert "sync requires overlap_actions=0" in result.stderr
+
+
+def test_cli_can_restore_sync_after_legacy_async_json(inputs):
+    inputs["config"].write_text(
+        json.dumps({"schedule": "paper_async", "async_delay": 2})
+    )
+    result = invoke(inputs, "--schedule", "sync", "--overlap-actions", "0", "--dry-run")
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["schedule"] == "sync"
+    assert "--eval.async_delay=0" in plan["upstream_arguments"]
+
+
+def test_quant_preset_rejects_an_ambiguous_profile_override(inputs):
+    result = invoke(
+        inputs,
+        "--quant",
+        "w8a8-single-layer",
+        "--quant-selected-profile",
+        "custom",
+        "--dry-run",
+    )
+    assert result.returncode != 0
+    assert "profile" in result.stderr.lower()
+
+
+def test_cli_profile_values_feed_the_shared_paper_model(inputs):
+    result = invoke(
+        inputs,
+        "--overlap-actions",
+        "2",
+        "--paper-action-time-ms",
+        "20",
+        "--paper-inference-time-ms",
+        "100",
+        "--paper-inference-time-source",
+        "synthetic CLI fixture",
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["schedule"] == "paper_async"
+    assert plan["paper_async"]["timing"]["cycle_time_ms"] == 160
+
+
 def test_quantization_requires_explicit_dependencies(inputs):
     inputs["config"].write_text(json.dumps({"quant_ladder": "fp16_to_w8a8"}))
     result = invoke(inputs, "--dry-run")
