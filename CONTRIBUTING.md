@@ -19,11 +19,11 @@ Issue/PR注明 `static/<case>`、`dynamic/<case>` 或 `shared`。前两类分别
 代码变更运行相应检查：
 
 ```bash
-python -m ruff check tools tests
-python -m ruff format --check tools tests
+python -m ruff check tools tests benchmarks
+python -m ruff format --check tools tests benchmarks
 python tools/validate_contracts.py --examples
 python -m pytest -q
-python -m compileall -q tools
+python -m compileall -q tools benchmarks
 ```
 
 绘图测试需要可选Matplotlib依赖，未安装时跳过这部分，数值核心测试仍运行。纯文档修改核对链接与 `git diff --check`；不为拼写修改新增测试或运行GPU实验。图册脚本修改还需实际重建并检查输出。
@@ -42,7 +42,7 @@ reviewer复现关键案例并核对接口语义；维护者在至少一位非作
 
 忽略规则按具体目录/产物设置，不使用全局 `*.md` 排除必要说明。`.gitignore` 不会自动移除已跟踪文件；停止跟踪时保留本地内容。公共README和稳定规范只链接仓内已跟踪文件或公开来源。
 
-本仓库安装和运行不得依赖父目录的私有资料。外部源码先登记来源及条款，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。公开PR的CI使用托管临时CPU runner；实验室GPU验证通过单独隔离流程处理。
+默认安装与CPU检查不得依赖父目录私有资料。可选模型试跑须列明外部源码、checkpoint和资产，由调用者显式提供路径；公开代码不预设某台机器的目录布局。引入外部源码前登记来源及条款，见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。公开PR的CI使用托管临时CPU runner；实验室GPU验证通过单独隔离流程处理。
 
 ## 维护者配置远端
 

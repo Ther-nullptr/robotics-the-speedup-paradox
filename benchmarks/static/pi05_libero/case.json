@@ -1,0 +1,20 @@
+{
+  "suite": "libero_object",
+  "episodes": 1,
+  "batch_size": 1,
+  "seed": 42,
+  "n_action_steps": 5,
+  "num_inference_steps": 10,
+  "compile_model": false,
+  "async_delay": 0,
+  "action_quant": 1,
+  "delay_state_with_observation": true,
+  "quant_ladder": "none",
+  "quant_selected_profile": null,
+  "quant_compute_dtype": "bfloat16",
+  "quantize_vlm_text": true,
+  "quantize_vision_tower": false,
+  "quantize_diffusion_head": false,
+  "quantize_suffix_head": false,
+  "quantize_mm_projector": false
+}

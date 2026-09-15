@@ -1,6 +1,6 @@
 # 模型与模拟器接入协议
 
-本协议定义首版接入的责任与交付物，不要求先跑完整论文实验。所有模型当前为 planned；路径是后续任务建议。
+本协议定义首版接入的责任与交付物，不要求先跑完整论文实验。π0.5＋LIBERO已有 [外部源码试跑桥接](../../benchmarks/static/pi05_libero/README.md)，其余模型后端与真实异步运行时仍为planned；后续路径按实际接入创建。
 
 接入以具体实验case为单位，静态任务与动态任务分别维护入口、控制协议和baseline，见 [架构边界](../architecture.md)。case绑定模型、checkpoint、processor、任务和模拟器；新增Engine或SimulatorAdapter不自动扩展其他case的支持范围。组合是否可用须检查任务匹配权重、观测/动作语义、控制周期及协议能力，不能只检查数组形状。
 

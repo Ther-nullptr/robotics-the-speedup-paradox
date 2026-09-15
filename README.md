@@ -1,6 +1,6 @@
 # Robotics: The Speedup Paradox
 
-面向模型推理与机器人实验的基础工具。目前已提供 CPU 数据契约校验、baseline 加速比计算和轨迹分析；模型推理后端与模拟器接入仍在规划中。
+面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO试跑入口](benchmarks/static/pi05_libero/README.md)。试跑调用用户提供的兼容外部源码和checkpoint；内置模型后端、量化kernel与真实异步运行时仍待实现。
 
 实验按静态和动态任务分别组织。每个case绑定模型、权重、任务、环境及协议，只在已验证的范围内选择量化或调度方案。
 
@@ -9,7 +9,7 @@
 | [静态任务](benchmarks/static/README.md) | π0.5＋LIBERO；Cosmos-Policy＋对应LIBERO/RoboCasa任务；LingBot-VA的任务组合待明确 |
 | [动态任务](benchmarks/dynamic/README.md) | DynamicVLA＋DOM；[Kinetix](benchmarks/dynamic/kinetix/README.md)保留原生JAX策略、环境与rollout |
 
-两个目录已提供case范围、文件归属和接入验收说明，运行代码尚未实现。两条路径共享事件/指标约定和分析工具，按能力复用执行与backend组件；各case维护自己的控制协议和baseline，任务类型与同步/异步调度分别声明。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
+两个目录分别组织case。π0.5＋LIBERO已有显式路径配置、CPU预检、权重加载审计与外部评测桥接；其他模型及动态case仍为规划。两条路径共享事件/指标约定和分析工具，按能力复用执行与backend组件；各case维护自己的控制协议和baseline，任务类型与同步/异步调度分别声明。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
 
 ## 快速开始
 

@@ -1,0 +1,4 @@
+{
+  "quant_ladder": "fp16_to_w8a8",
+  "quant_selected_profile": "smoke_txt_b00_down"
+}
