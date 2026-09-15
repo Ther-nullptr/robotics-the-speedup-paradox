@@ -254,7 +254,7 @@ def markdown_report(report, per_task=False):
     lines = [
         "# Experiment control-step summary",
         "",
-        "Unit: primitive control steps. Task means are weighted by episode count; success-only means are weighted by successful episode count.",
+        "Unit: primitive control steps. Failed episodes use their declared step budgets. Task means are weighted by episode count; success-only means are weighted by successful episode count.",
         "",
     ]
     for run in report["runs"]:
@@ -268,9 +268,8 @@ def markdown_report(report, per_task=False):
             "| --- | ---: | ---: | ---: |",
         ]
         for title, key, count in [
-            ("All episodes (observed)", "all_episodes", stats["episodes"]),
-            ("Success only", "successful_episodes", stats["successes"]),
             ("All episodes (failure budget)", "failure_penalized", stats["episodes"]),
+            ("Success only", "successful_episodes", stats["successes"]),
         ]:
             item = stats[key]
             lines.append(
@@ -287,17 +286,16 @@ def markdown_report(report, per_task=False):
         if per_task:
             lines += [
                 "",
-                "| Task | Episodes | Successes | Observed mean | Success mean | Failure-budget mean | Episode weight | Success weight |",
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| Task | Episodes | Successes | Failure-budget mean | Success mean | Episode weight | Success weight |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
             for task in run["statistics"]["tasks"]:
                 values = [
                     label(task["task"]),
                     task["episodes"],
                     task["successes"],
-                    task["all_episodes"]["mean_control_steps"],
-                    task["successful_episodes"]["mean_control_steps"],
                     task["failure_penalized"]["mean_control_steps"],
+                    task["successful_episodes"]["mean_control_steps"],
                     task["trial_weight"],
                     task["success_weight"],
                 ]
@@ -326,12 +324,10 @@ def csv_report(report, per_task=False):
             "successes",
             "failures",
             "success_rate",
-            "all_total_control_steps",
-            "all_mean_control_steps",
-            "success_total_control_steps",
-            "success_mean_control_steps",
             "failure_penalized_total_control_steps",
             "failure_penalized_mean_control_steps",
+            "success_total_control_steps",
+            "success_mean_control_steps",
             "trial_weight",
             "success_weight",
             "penalty_status",
@@ -355,9 +351,8 @@ def csv_report(report, per_task=False):
                 stats["success_rate"],
             ]
             for key in (
-                "all_episodes",
-                "successful_episodes",
                 "failure_penalized",
+                "successful_episodes",
             ):
                 values += [
                     stats[key]["total_control_steps"],

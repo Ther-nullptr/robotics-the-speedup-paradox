@@ -149,7 +149,7 @@ $$
 
 ## 汇总实验控制步数
 
-运行正常结束后自动生成 `episode-summary.md` 和 `episode-summary.json`。终端、Markdown和CSV汇总展示全体实际步数、仅成功步数和失败按预算惩罚的统计；JSON仍保留失败样本的原始步数与加权分量用于复核，不作为报告中的独立效率指标。汇总同时保留样本数、成功数和SR；`coverage.json` 中的 `max_primitive_steps` 提供本次控制步数预算。
+运行正常结束后自动生成 `episode-summary.md` 和 `episode-summary.json`。终端、Markdown和CSV的总体指标统一使用失败按预算惩罚的口径，并保留仅成功统计；JSON中的实际步数与加权分量只用于复核。当前π0.5＋LIBERO中，未成功的episode运行至控制步数预算上限。汇总同时保留样本数、成功数和SR；`coverage.json` 中的 `max_primitive_steps` 提供本次控制步数预算。
 
 也可以用CPU工具重新查看已有结果；无需启动模型或模拟器。从仓库根目录运行：
 
@@ -165,7 +165,7 @@ python tools/summarize_experiment.py \
 
 `--input` 也接受 `episodes.jsonl` 文件，多个运行分别汇总。默认输出Markdown，可用 `--format json` 或 `--format csv`，也可由 `--output` 扩展名选择格式；目标文件须不存在。JSON始终包含各任务，Markdown/CSV以 `--per-task` 展开。不同任务预算可重复指定 `--task-max-steps TASK=LIMIT`，覆盖通用预算。未提供失败预算时惩罚项为null，不猜测观测最大值。
 
-全体均值以总episode数为分母，成功均值以成功数为分母；跨任务分别按总样本数和成功数加权。零成功时成功均值为null；“成功步数总和/全体episode数”只是成功贡献。控制步数不等于时间或模型调用数，完整定义见 [统计口径](../../../docs/protocols/speedup-metrics.md#8-控制步数统计与实验汇总)。
+总体预算均值以总episode数为分母，成功均值以成功数为分母；跨任务分别按总样本数和成功数加权。零成功时成功均值为null。控制步数不等于时间或模型调用数，完整定义见 [统计口径](../../../docs/protocols/speedup-metrics.md#8-控制步数统计与实验汇总)。
 
 未完成或失败的运行需显式加 `--allow-partial`，结果标为 `partial`；裸ledger缺少完成元数据时标为 `unverified`。完整状态还会核对伴随manifest、coverage与ledger的一致性；手动生成汇总不会将不完整运行改成完成。
 

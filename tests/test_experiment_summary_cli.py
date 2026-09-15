@@ -150,13 +150,15 @@ def test_default_markdown_and_csv_formats(experiment):
     markdown = run("--input", experiment, "--max-steps", 100)
     assert markdown.returncode == 0, markdown.stderr
     assert (
-        "All episodes (observed)" in markdown.stdout
+        "All episodes (failure budget)" in markdown.stdout
         and "Success only" in markdown.stdout
     )
+    assert "All episodes (observed)" not in markdown.stdout
     assert markdown.stdout.isascii()
     csv = run("--input", experiment, "--max-steps", 100, "--format", "csv")
     assert csv.returncode == 0, csv.stderr
-    assert "all_total_control_steps" in csv.stdout
+    assert "all_total_control_steps" not in csv.stdout
+    assert "all_mean_control_steps" not in csv.stdout
     assert "failure_penalized_mean_control_steps" in csv.stdout
 
 
