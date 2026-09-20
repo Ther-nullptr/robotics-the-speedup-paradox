@@ -1,30 +1,30 @@
 # 静态任务实验入口
 
-本目录组织静态任务的case、运行入口和实验配置。[π0.5＋LIBERO](pi05_libero/README.md) 正式入口已完成原精度和单个文本层W8A8替换的同步单episode smoke，并提供论文静态抽象 `paper_async` 配置及W8A8/W4A4 synthetic Linear检查入口；其他case仍在规划。完整benchmark和全模型量化质量尚未验证。
+本目录组织静态任务的case、运行入口和实验配置。[π0.5＋LIBERO](pi05_libero/README.md) 已有原精度评估、单层量化smoke及论文静态抽象 `paper_async` 入口；[Cosmos-Policy＋LIBERO](cosmos_libero/README.md) 已有独立 engine/simulator/单环境 runner，完成固定输入动作对齐及同步、论文异步各一个GPU闭环smoke。具体实验设置与验证范围分别见case说明。
 
 | case入口 | 绑定范围 | 当前状态与接入边界 |
 | --- | --- | --- |
 | [pi05_libero](pi05_libero/README.md) | 原生 LeRobot π0.5＋LIBERO任务 | 同步单episode仅为smoke，不作任务集SR；`paper_async` 使用历史观测与论文周期模型。使用任务匹配权重及同源processor，不使用VLASH微调权重 |
-| `cosmos_libero/` | Cosmos-Policy＋LIBERO任务 | 对应checkpoint、统计量、文本编码与相机/动作处理 |
+| [cosmos_libero](cosmos_libero/README.md) | Cosmos-Policy＋LIBERO spatial/object/goal/10 | 独立入口；原精度、H=16、n默认16；object单任务sync/paper_async GPU smoke通过，其余任务闭环待验证 |
 | `cosmos_robocasa/` | Cosmos-Policy＋其适配的RoboCasa任务 | 对应checkpoint、环境fork/资产版本、控制器和预后处理 |
 | `lingbot_va/` | LingBot-VA静态任务 | 任务/模拟器/checkpoint组合待明确；cache与历史状态独立定义 |
 
-除上述 π0.5＋LIBERO 单 episode 路径外，表内其他 case 均为 planned。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
+Cosmos/RoboCasa和LingBot-VA仍为planned。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
 
 ## 文件归属
 
-- 每个case的启动代码与配置放 `benchmarks/static/<case>/`；当前 `pi05_libero/` 使用 `run.py`、`case.json`、加载审计模块和独立 `quant_smoke.py`。其他 case 在实际接入时一起创建并验证，不提前放占位文件。
-- 模型计算与预后处理放 `src/robotics_bench/policies/`；环境适配放 `src/robotics_bench/simulators/`；静态任务控制协议放 `src/robotics_bench/protocols/static/`。这些源码目录仍待实际实现。
+- 每个case的启动代码与配置放 `benchmarks/static/<case>/`；`pi05_libero/` 保留独立评测桥接，`cosmos_libero/` 使用 `config.py` 预检与 `run.py` 执行生命周期。
+- Cosmos模型适配放 `src/robotics_bench/engines/`；原生LIBERO适配放 `src/robotics_bench/simulators/`；单环境静态控制协议位于 `src/robotics_bench/protocols/static_runner.py`。外部模型源码与权重不进入这些目录。
 - baseline、量化、同步/异步变体属于同一个case。配置引用固定版本的模型/环境与优化方案，运行产物放仓库已忽略的 `runs/static/<case>/`。
 
 静态任务可以异步运行，也可以发生正常物理演化。任务分类、调度策略和等待期间世界推进分别声明；本路径不依赖DOM的时延补偿或过期动作规则。
 
-本路径的论文异步使用 `schedule=paper_async`，`overlap_actions=n′` 在0到实际执行长度n之间；π0.5默认n为5。入口将n′映射到外部 `eval.async_delay`，回取 `t−n′` 的观测；本case显式选择图像/state来自同一快照，历史不足时使用当前观测。真实后台并发是独立扩展，不作为论文异步的验收门槛。
+本路径的论文异步使用 `schedule=paper_async`，`overlap_actions=n′` 在0到实际执行长度n之间；π0.5默认n为5，Cosmos默认n为16。π0.5入口映射到外部 `eval.async_delay`，Cosmos由本仓runner回取 `t−n′` 观测；两者均使用同一历史快照的图像/state，历史不足时使用当前观测。真实后台并发是独立扩展，不作为论文异步的验收门槛。
 
 ## 接入与验收
 
 先用固定输入与噪声对齐原生动作，再验证单任务同步闭环，之后比较同case支持的量化/异步变体。完整论文复现不是前置条件。
 
-每组记录实际backend、观测来源、成功率及各时间域的任务耗时；有同范围推理时间时，按该case及硬件的baseline计算加速比。`paper_model` 中默认 `Tact=1000/30 ms` 只是解析假设，不改变模拟器physics dt；未提供 `Tinf` 时不生成周期或加速比，宿主 `eval_s` 单列。轨迹/jerk分析复用 [现有工具](../../tools/embodied/README.md)。配置和验收遵循 [组合实验](../../docs/protocols/composable-experiments.md)、[模型接入](../../docs/protocols/model-adapters.md) 与 [加速比协议](../../docs/protocols/speedup-metrics.md)。
+每组记录实际backend、观测来源、成功率及各时间域的任务耗时；有同范围推理时间时，按该case及硬件的baseline计算加速比。`paper_model` 的 `Tact` 按case声明：π0.5默认 `1000/30 ms`，Cosmos默认 `50 ms`，都不改变模拟器physics dt。未提供 `Tinf` 时不生成周期或加速比，宿主 `eval_s` 单列。轨迹/jerk分析复用 [现有工具](../../tools/embodied/README.md)。配置和验收遵循 [组合实验](../../docs/protocols/composable-experiments.md)、[模型接入](../../docs/protocols/model-adapters.md) 与 [加速比协议](../../docs/protocols/speedup-metrics.md)。
 
 开发任务在Issue中标记 `static/<case>`；共享底层改动标记 `shared`。动态任务有 [独立入口](../dynamic/README.md)，两条路径不共用任务baseline。

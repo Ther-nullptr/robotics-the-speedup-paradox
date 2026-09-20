@@ -1,6 +1,6 @@
 # AI 协作约定
 
-本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO试跑入口。静态异步采用论文抽象 `paper_async`；尚未内置模型或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
+本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO和Cosmos＋LIBERO入口。Cosmos引擎、原生模拟器适配与单环境runner位于 `src/robotics_bench/`。静态异步采用论文抽象 `paper_async`；尚未内置完整模型实现或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
 
 ## 开始工作
 

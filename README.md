@@ -1,6 +1,6 @@
 # Robotics: The Speedup Paradox
 
-面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO试跑入口](benchmarks/static/pi05_libero/README.md)。试跑调用用户提供的兼容外部源码和checkpoint，支持同步基线与论文静态抽象 `paper_async`；内置模型后端和量化kernel仍待实现。
+面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO](benchmarks/static/pi05_libero/README.md) 和 [Cosmos-Policy＋LIBERO](benchmarks/static/cosmos_libero/README.md) 运行入口。两者使用调用者提供的兼容外部源码与checkpoint，支持同步基线及论文静态抽象 `paper_async`。Cosmos 通过独立 engine、simulator 和单环境 runner 接入，当前支持原精度，已完成固定输入动作对齐及同步、论文异步各一个GPU闭环smoke。
 
 实验按静态和动态任务分别组织。每个case绑定模型、权重、任务、环境及协议，只在已验证的范围内选择量化或调度方案。
 
@@ -8,10 +8,10 @@
 
 | 实验入口 | 当前规划 |
 | --- | --- |
-| [静态任务](benchmarks/static/README.md) | π0.5＋LIBERO；Cosmos-Policy＋对应LIBERO/RoboCasa任务；LingBot-VA的任务组合待明确 |
+| [静态任务](benchmarks/static/README.md) | π0.5＋LIBERO；Cosmos-Policy＋LIBERO已有独立入口；Cosmos/RoboCasa与LingBot-VA仍待接入 |
 | [动态任务](benchmarks/dynamic/README.md) | DynamicVLA＋DOM；[Kinetix](benchmarks/dynamic/kinetix/README.md)保留原生JAX策略、环境与rollout |
 
-两个目录分别组织case。π0.5＋LIBERO已有显式路径配置、CPU预检、权重加载审计与外部评测桥接；其他模型及动态case仍为规划。两条路径共享事件/指标约定和分析工具，按能力复用执行与backend组件；各case维护自己的控制协议和baseline，任务类型与同步/异步调度分别声明。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
+两个目录分别组织case。π0.5＋LIBERO已有显式路径配置、CPU预检、权重加载审计与外部评测桥接；Cosmos＋LIBERO新增本仓库控制生命周期、原生模型/环境适配和逐请求历史观测记录，保留基线 `1a4983e` 已有的π0.5功能。两条路径共享事件/指标约定和分析工具，各case维护自己的控制协议、baseline和验证范围。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
 
 ## 快速开始
 
@@ -30,6 +30,8 @@ python -m pytest -q
 也可以用 `uv venv --python 3.11 .venv` 创建环境，再运行 `uv pip install -r requirements-dev.txt`。上述工具不加载模型或使用GPU；示例是synthetic数据。绘图额外安装 `tools/embodied/requirements-plot.txt`，详见 [轨迹工具说明](tools/embodied/README.md)。
 
 π0.5＋LIBERO实验可直接使用命令行：先按 [case说明](benchmarks/static/pi05_libero/README.md) 配好本机路径，再运行 `bash benchmarks/static/pi05_libero/run.sh --schedule paper_async --overlap-actions 2 --quant none --gpu 3 --output-dir runs/static/pi05_libero/trial-001`。`--quant w8a8-single-layer` 自动选择单层量化预设；常用设置无需手写JSON，manifest与结果文件由入口生成。
+
+Cosmos＋LIBERO先按 [case说明](benchmarks/static/cosmos_libero/README.md) 配好外部资源和 `ROBOTICS_COSMOS_PYTHON`，再用 `bash benchmarks/static/cosmos_libero/run.sh --task-ids 0 --episodes 1 --quant none --output-dir runs/static/cosmos_libero/trial-001 --dry-run` 做CPU预检。实际运行去掉 `--dry-run` 并显式传 `--gpu`；日志、episode/请求记录和汇总由入口自动保存。现有环境复用不等于完整新机安装，checkpoint和运行依赖不包含在上述CPU开发依赖中。
 
 ## 工具与规范
 
