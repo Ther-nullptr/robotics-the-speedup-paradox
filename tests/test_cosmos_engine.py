@@ -362,6 +362,7 @@ def native_boundary(tmp_path, monkeypatch):
     calls = []
     loader = SimpleNamespace(instantiate=lambda config: model, SMOKE=False)
     resolved_config = SimpleNamespace(
+        checkpoint=SimpleNamespace(load_path=str(checkpoint)),
         model=SimpleNamespace(
             config=SimpleNamespace(tokenizer=SimpleNamespace(vae_pth=str(vae)))
         ),
@@ -381,6 +382,7 @@ def native_boundary(tmp_path, monkeypatch):
         return {"actions": np.ones((16, 7), dtype=np.float64)}
 
     backend = SimpleNamespace(
+        checkpoint_registry=SimpleNamespace(get_checkpoint_path=lambda path: path),
         np=np,
         torch=SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: True)),
         utils=SimpleNamespace(get_action=get_action, DEVICE="cuda:0"),
@@ -432,6 +434,7 @@ def test_load_uses_native_config_vae_override_and_restores_argv(native_boundary)
     assert json.loads(b.audit.read_text())["status"] == "passed"
     assert engine.metadata["batch_size"] == 1
     assert engine.metadata["resolved_config"] == {
+        "checkpoint_load_path": str(engine.checkpoint),
         "tokenizer_vae_pth": str(engine.vae_checkpoint),
         "dataset_chunk_size": 16,
     }
@@ -457,18 +460,47 @@ def test_relative_audit_remains_in_callers_directory(
     assert not (b.engine.source / "artifacts").exists()
 
 
-@pytest.mark.parametrize("field", ["vae_pth", "chunk_size"])
+@pytest.mark.parametrize("field", ["vae_pth", "chunk_size", "checkpoint_load_path"])
 def test_resolved_configuration_mismatch_rejects_loaded_model(native_boundary, field):
     b = native_boundary
     if field == "vae_pth":
         b.resolved_config.model.config.tokenizer.vae_pth = "/ignored/override.pth"
-    else:
+    elif field == "chunk_size":
         b.resolved_config.dataloader_train.dataset.chunk_size = 32
+    else:
+        b.resolved_config.checkpoint.load_path = "/wrong/model.pt"
     with pytest.raises(RuntimeError, match=field):
         b.engine.load(["pick up cup"], b.audit)
     assert json.loads(b.audit.read_text())["status"] == "failed"
     with pytest.raises(RuntimeError, match="load"):
         b.engine.reset(("libero_object", 0, 0))
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_registration_binds_only_unused_base_reference_and_restores(tmp_path, fail):
+    module = importlib.import_module("robotics_bench.engines.cosmos")
+    checkpoint = tmp_path / "policy.pt"
+    checkpoint.write_bytes(b"real policy fixture")
+    calls = []
+
+    def original(path):
+        calls.append(path)
+        raise ValueError("unavailable original reference")
+
+    registry = SimpleNamespace(get_checkpoint_path=original)
+    try:
+        with module._checkpoint_registration_context(registry, checkpoint) as bindings:
+            for path in module.BASE_CHECKPOINT_REFERENCES:
+                assert registry.get_checkpoint_path(path) == str(checkpoint)
+            assert len(bindings) == 2
+            with pytest.raises(ValueError, match="original"):
+                registry.get_checkpoint_path("hf://other/model/model.pt")
+            if fail:
+                raise RuntimeError("config failed")
+    except RuntimeError:
+        assert fail
+    assert calls == ["hf://other/model/model.pt"]
+    assert registry.get_checkpoint_path is original
 
 
 def test_infer_flips_once_preserves_dtype_and_native_preprocessing(native_boundary):

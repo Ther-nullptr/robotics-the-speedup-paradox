@@ -2,6 +2,8 @@
 
 本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO和Cosmos＋LIBERO入口。Cosmos引擎、原生模拟器适配与单环境runner位于 `src/robotics_bench/`。静态异步采用论文抽象 `paper_async`；尚未内置完整模型实现或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
 
+`tools/prepare_resources.py` 提供独立的可选联网下载/本地复用入口，默认模型和数据集缓存位于 `~/.cache/robotics/hub`，LIBERO资产沿用 `~/.cache/libero/assets`。下载不进入公共CPU CI，运行入口继续离线；资源准备成功不等于新机运行环境已经安装。
+
 ## 开始工作
 
 1. 阅读 `README.md`、`CONTRIBUTING.md`、当前 Issue/PR 的任务范围及相关 `docs/protocols/` 文档。

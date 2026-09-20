@@ -14,6 +14,46 @@ from types import SimpleNamespace
 from .cosmos_load_guard import checkpoint_load_guard
 
 
+BASE_CHECKPOINT_REFERENCES = (
+    "checkpoints/Cosmos-Predict2-2B-Video2World/model-480p-16fps.pt",
+    "hf://nvidia/Cosmos-Predict2-2B-Video2World/model-480p-16fps.pt",
+)
+
+
+@contextmanager
+def _checkpoint_registration_context(registry, checkpoint):
+    """Resolve the unused training base to the actual inference checkpoint.
+
+    Native configuration resolves this one base reference during registration,
+    before load_model_from_checkpoint overrides checkpoint.load_path. Binding
+    it here avoids fetching unused training weights. Other references keep
+    their original resolver; source files and cached weights are never edited.
+    """
+    original = registry.get_checkpoint_path
+    bindings = []
+
+    def resolve(reference):
+        if reference in BASE_CHECKPOINT_REFERENCES:
+            if not checkpoint.is_file():
+                raise FileNotFoundError(checkpoint)
+            bindings.append({"reference": reference, "path": str(checkpoint)})
+            return str(checkpoint)
+        return original(reference)
+
+    registry.get_checkpoint_path = resolve
+    try:
+        yield bindings
+    finally:
+        registry.get_checkpoint_path = original
+        # Restore aliases imported by native config modules during this scope.
+        for name, module in list(sys.modules.items()):
+            if (
+                name.startswith("cosmos_policy.")
+                and getattr(module, "get_checkpoint_path", None) is resolve
+            ):
+                module.get_checkpoint_path = original
+
+
 @contextmanager
 def _libero_import_context(source):
     """Bind native LIBERO imports and config registration to the source root.
@@ -62,6 +102,9 @@ def _import_native(source):
         constants=constants,
         utils=utils,
         loader=loader,
+        checkpoint_registry=importlib.import_module(
+            "cosmos_policy._src.imaginaire.utils.checkpoint_db"
+        ),
     )
 
 
@@ -245,7 +288,12 @@ class CosmosEngine:
                     raise RuntimeError(
                         "Cosmos native inference requires a visible CUDA device"
                     )
-                with checkpoint_load_guard(backend.loader, audit_path) as audit:
+                with (
+                    _checkpoint_registration_context(
+                        backend.checkpoint_registry, self.checkpoint
+                    ) as bindings,
+                    checkpoint_load_guard(backend.loader, audit_path) as audit,
+                ):
                     model, resolved_config = backend.loader.load_model_from_checkpoint(
                         experiment_name=self.config_name,
                         s3_checkpoint_dir=str(self.checkpoint),
@@ -260,10 +308,23 @@ class CosmosEngine:
                         resolved_config.dataloader_train.dataset.chunk_size
                     )
                     resolved_values = {
+                        "checkpoint_load_path": str(
+                            resolved_config.checkpoint.load_path
+                        ),
                         "tokenizer_vae_pth": str(resolved_vae),
                         "dataset_chunk_size": resolved_chunk_size,
                     }
                     audit["resolved_config"] = resolved_values
+                    audit["checkpoint_registration_bindings"] = bindings
+                    if (
+                        Path(resolved_config.checkpoint.load_path)
+                        .expanduser()
+                        .resolve()
+                        != self.checkpoint
+                    ):
+                        raise RuntimeError(
+                            "resolved checkpoint_load_path does not match the requested policy checkpoint"
+                        )
                     if Path(resolved_vae).expanduser().resolve() != self.vae_checkpoint:
                         raise RuntimeError(
                             "resolved tokenizer.vae_pth does not match the requested VAE checkpoint"

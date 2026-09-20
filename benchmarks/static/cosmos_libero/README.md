@@ -1,6 +1,6 @@
 # Cosmos-Policy＋LIBERO 静态 case
 
-[run.sh](run.sh) 调用本仓库的 [run.py](run.py)，每次只推进一个原生 LIBERO 环境。模型加载与动作推理由 [CosmosEngine](../../../src/robotics_bench/engines/cosmos.py) 负责，[LIBERO adapter](../../../src/robotics_bench/simulators/libero.py) 负责任务、初态和环境生命周期，[静态 runner](../../../src/robotics_bench/protocols/static_runner.py) 负责动作执行与历史观测选择。外部 Cosmos 源码、模型权重、统计量、文本 embedding 和模拟器资产均由调用者显式提供，本仓库不下载或 vendor 这些资源。
+[run.sh](run.sh) 调用本仓库的 [run.py](run.py)，每次只推进一个原生 LIBERO 环境。模型加载与动作推理由 [CosmosEngine](../../../src/robotics_bench/engines/cosmos.py) 负责，[LIBERO adapter](../../../src/robotics_bench/simulators/libero.py) 负责任务、初态和环境生命周期，[静态 runner](../../../src/robotics_bench/protocols/static_runner.py) 负责动作执行与历史观测选择。外部源码由调用者提供，模型和模拟器资产可复用本地文件，或通过独立的 [资源准备工具](../../../tools/RESOURCE_PREPARATION.md) 下载；这些资源不进入 Git。
 
 当前接入原精度推理，`--quant` 仅接受 `none`。模型固定预测 H=16 个七维动作，`--n-action-steps` 指每块实际执行的前 n 个动作，默认 n=16，范围为 1..16。遇到成功、环境终止或步数预算时立即停止。
 
@@ -29,7 +29,7 @@ CLI 路径优先于环境变量；shell 入口不会自动加载 `.env` 文件�
 
 CPU 开发依赖足以运行配置和接口测试。实际模型运行还需要兼容的 PyTorch/CUDA、Cosmos 依赖、LIBERO、MuJoCo/robosuite 及 EGL；启用录像需要 imageio 和 MP4/FFmpeg 后端。本机测试使用普通用户的Python 3.10.12环境，复用既有Cosmos packages，并单独安装robosuite 1.4.0；实际组合为PyTorch 2.7.0+cu128、MuJoCo 3.2.6、LIBERO 0.1.1。RoboCasa使用的robosuite 1.5.x不满足本LIBERO包的SingleArmEnv接口。这个本地复用环境不是完整的新机器安装流程。
 
-入口没有自动下载功能：缺少checkpoint、统计量、T5或VAE文件会报错，运行时启用Hugging Face离线模式。当前LIBERO包先找包内assets，再使用 `~/.cache/libero/assets`；只有config.yaml中的assets字段不保证它能找到资产。原生Cosmos配置注册还可能检查源码目录内的相对checkpoint路径；本地验证的配置包含 `checkpoints/Cosmos-Predict2-2B-Video2World/model-480p-16fps.pt`。引擎只在原生加载阶段临时使用源码工作目录并恢复，不修改外部源码，也不会为这些依赖创建替代文件。
+实验入口保持离线，缺少文件时先运行 `python tools/prepare_resources.py --case cosmos_libero`。模型默认下载到 `~/.cache/robotics/hub/`，LIBERO资产到 `~/.cache/libero/assets/`，再显式加载生成的 `~/.cache/robotics/env/cosmos_libero.env`。生成完整源码、解释器和初态配置的方法见 [资源准备说明](../../../tools/RESOURCE_PREPARATION.md)。原生配置中的已知 Video2World 基础 checkpoint 引用在加载期间绑定到本次 Policy checkpoint，并核对最终加载路径；不再依赖源码目录中那份未参与推理的基础权重。
 
 ## 预检与小规模运行
 

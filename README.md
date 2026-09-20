@@ -35,6 +35,8 @@ Cosmos＋LIBERO先按 [case说明](benchmarks/static/cosmos_libero/README.md) �
 
 ## 工具与规范
 
+缺少模型和模拟器资产时，使用 `python tools/prepare_resources.py --case cosmos_libero --dry-run` 查看资源计划，或选择 `pi05_libero`。按 [资源准备说明](tools/RESOURCE_PREPARATION.md) 安装下载依赖后去掉 `--dry-run`：默认模型/可选数据集缓存为 `~/.cache/robotics/hub/`，LIBERO资产为 `~/.cache/libero/assets/`；生成的 env 显式加载后可用于现有启动项。训练轨迹使用 `--with-dataset` 单独启用。
+
 | 入口 | 内容 |
 | --- | --- |
 | [贡献协议](CONTRIBUTING.md) / [AGENTS.md](AGENTS.md) | Issue、PR、验收与AI协作 |
