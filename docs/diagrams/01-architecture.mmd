@@ -1,11 +1,15 @@
 flowchart TB
     accTitle: Implemented Robotics Case Architecture
-    accDescr: Three static cases are runnable. Pi05 uses a compatible external evaluator; Cosmos cases share the native static runner, engine and simulator adapters. CPU contracts and analysis are shared. Dynamic cases remain planned.
+    accDescr: Three static cases call owned model execution paths through the Pi05 evaluator bridge or Cosmos engine. Optional adapters use independent robotics kernels. Framework and simulator dependencies remain external. Dynamic cases remain planned.
     pi05["pi05_libero CLI"] --> evaluator["External evaluator bridge"]
     cosmos["cosmos_libero / cosmos_robocasa CLI"] --> runner["Static runner"]
     runner --> engine["Cosmos engine"]
     runner --> simulator["LIBERO / RoboCasa adapters"]
-    engine --> external["Explicit external model and simulator sources"]
+    engine --> models["Owned PI0.5 / Cosmos execution"]
+    evaluator --> models
+    models --> optimizations["Optional fusion / precision adapters"]
+    optimizations --> kernels["Independent robotics kernels"]
+    models --> external["External framework and simulator dependencies"]
     simulator --> external
     evaluator --> external
     evaluator --> artifacts["Episode records / audits / videos"]
@@ -16,6 +20,6 @@ flowchart TB
     classDef existing fill:#dcfce7,stroke:#15803d,color:#14532d
     classDef planned fill:#dbeafe,stroke:#2563eb,color:#172554
     classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
-    class pi05,evaluator,cosmos,runner,engine,simulator,artifacts,tools,contracts existing
+    class pi05,evaluator,cosmos,runner,engine,models,optimizations,kernels,simulator,artifacts,tools,contracts existing
     class dynamic planned
     class external external
