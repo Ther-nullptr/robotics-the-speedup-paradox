@@ -1,8 +1,14 @@
 # AI 协作约定
 
-本仓库当前提供协作协议、数据 schema、合成样例与 CPU 契约校验。没有模型推理、量化 kernel 或模拟器实现；不要把模板、schema 校验或 synthetic 轨迹说成性能与闭环实验结果。
+本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO和Cosmos＋LIBERO入口。Cosmos引擎、原生模拟器适配与单环境runner位于 `src/robotics_bench/`。静态异步采用论文抽象 `paper_async`；尚未内置完整模型实现或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
+
+Cosmos＋RoboCasa已提供单环境入口，当前验证限于TurnOffMicrowave固定场景的sync/paper_async GPU smoke。RoboCasa采用三相机、H=32、独立robosuite1.5.1环境，reset后才读取本回合指令；不要复用LIBERO的H=16或预先固定语言。`--reference-run` 校验相同场景初始化，训练数据与厨房资产分别准备。
+
+`tools/prepare_resources.py` 提供独立的可选联网下载/本地复用入口，默认模型和数据集缓存位于 `~/.cache/robotics/hub`，LIBERO资产沿用 `~/.cache/libero/assets`。下载不进入公共CPU CI，运行入口继续离线；资源准备成功不等于新机运行环境已经安装。
 
 ## 开始工作
+
+本仓执行 [贡献与PR制度](CONTRIBUTING.md)：代码、配置和文档都在主题分支开发，通过PR进入main，不直接提交/推送main。依赖未合并功能时明确声明前置分支/PR，并使用对应base；不将已有功能混入文档PR。提交与PR标题采用 `type: 中文摘要 / English summary`，PR正文按模板写双语目的、范围、验证、影响与回退，小改动保持简短。维护者审核后默认以merge commit合并。用户明确授权合并某个PR时，在规则满足后继续执行，不重复询问同一授权；普通开发不自动合并。
 
 1. 阅读 `README.md`、`CONTRIBUTING.md`、当前 Issue/PR 的任务范围及相关 `docs/protocols/` 文档。
 2. 确认 `git status --short`、分支和基线 commit，保留其他人的修改。任务范围以 Issue/PR 和用户最新指令为准。
@@ -20,23 +26,24 @@
 ## 修改边界
 
 - 一个任务一个 owner；只改约定文件。公共接口、时间语义或数值门槛变化须说明影响，并更新对应文档和案例。
-- 公共文件和检查只能依赖本仓库。不得读取、引用或发布父目录的私有项目、评审资料、凭据、机器绝对路径或外部软链接。
+- 默认CPU检查和公共文档链接须在干净克隆中自包含。模型试跑可通过显式参数使用case声明的外部源码、checkpoint和资产；不得硬编码、自动扫描或发布父目录私有资料、凭据、本机路径和外部软链接。
 - 未来通用核心不依赖机器人专用 adapter；Torch、CUDA 和模拟器不进入当前 CPU 契约工具的默认依赖。
 - 区分 wall time、sim time、device duration、result release、boundary wait 和 observation age。
+- 静态 `paper_async` 按论文历史观测 `t−n′` 与周期模型验收，`history_observation` 是其实现方式；真实并发是可选扩展。`paper_async` 仅为独立case manifest标签，不改变通用v1 schema中 `async` 的既有语义。state/warmup规则由case显式声明；论文模型的 `Tact` 不修改physics dt，缺少 `Tinf` 时不生成周期/加速比，host `eval_s` 不充当论文周期。
 - 保留真实 backend、dtype 和 fallback 证据。fake quant、GPU enqueue 返回和单个 GEMM 数字不代表真实端到端加速。
-- 不在公共 PR CI 中调用实验室 GPU runner 或下载模型权重。本轮开发无需 GPU。
+- 不在公共PR CI中调用实验室GPU runner或下载模型权重。模型/GPU试跑使用独立case环境并记录来源、设备和验证范围；CPU检查不依赖这些外部资源。
 - 使用已有风格，避免无关重构和全仓格式化。新增测试针对行为和失败边界；文字修订无需新测试。
 
 ## 验证与交接
 
-从仓库根目录运行与变更有关的命令，提交前执行 CPU 检查：
+按改动选择验证。纯文档/模板变更核对链接、命令、图稿和 `git diff --check`，不新增测试或运行GPU。Python行为或数据契约变更先做相关检查，提交前执行CPU检查：
 
 ```bash
-python -m ruff check tools tests
-python -m ruff format --check tools tests
+python -m ruff check tools tests benchmarks src
+python -m ruff format --check tools tests benchmarks src
 python tools/validate_contracts.py --examples
 python -m pytest -q
-python -m compileall -q tools
+python -m compileall -q tools benchmarks src
 ```
 
 开发依赖安装命令见 `CONTRIBUTING.md`。`compileall` 是语法检查，不是 formatter。报告实际运行的命令、结果及未验证条件；schema 校验通过不能证明实时性、数值精度或任务成功率。

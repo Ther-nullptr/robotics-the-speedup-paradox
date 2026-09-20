@@ -36,6 +36,8 @@ $$
 
 这是把论文两类周期模型合并的工程推导，**不是论文直接给出的组合公式**。它假设规则重叠、固定动作长度和代表性推理成本；额外的排队、通信或资源竞争需通过对应范围的测量或实际trace另行反映。
 
+静态 `paper_async` 采用论文附录B.1的 `t−n′` 历史观测实验，并将上述周期单列为 `paper_model`；真实host并发不是这个抽象实验的验收条件。π0.5 case默认n为5、`Tact=1000/30 ms`，后者只用于解析模型，不修改仿真步长。没有提供对应 `Tinf` 时，该case不生成周期/加速比，也不以0或宿主 `eval_s` 代填；可以先完成历史观测下的质量实验。[论文§3.1与B.1](https://arxiv.org/html/2606.28529v2)
+
 | 配置 | `Ic` | `m` |
 | --- | --- | --- |
 | baseline | `I0` | 0 |
@@ -149,4 +151,44 @@ python tools/compare_speedups.py --input examples/speedups/synthetic.json --mark
 
 静态任务图可使用周期加速比作横轴、成功条件任务加速比或任务时间作纵轴，并同时展示SR。动态任务重点报告SR/score、环境速度与观测年龄，速度是共同参考坐标；SR比值不命名为“加速比”。打分任务的score也不能当作二项成功率。
 
-既有固定预算失败惩罚指标仍可保留，但要另起字段，不能混入论文成功条件任务时间。当前calculator没有实现该惩罚统计、置信区间、原始trace聚合或跨任务聚合；这些需要原始试验数据及独立的后续验收。
+固定预算失败惩罚指标使用独立字段，不能混入成功条件任务时间。`compare_speedups.py`处理调用方提供的时间摘要，不聚合原始episode或计算置信区间；下面的控制步数工具独立处理episode统计，不生成时间加速比。
+
+## 8. 控制步数统计与实验汇总
+
+[summarize_experiment.py](../../tools/summarize_experiment.py) 从 `episodes.jsonl` 汇总实际控制步数。每条记录包含 `task`、`init_state_id`、布尔 `success` 和非负整数 `primitive_steps`，可选 `env_seed`；同一运行内重复的任务、初态与seed组合会被拒绝。这些步数不是任务耗时、模型调用数或动作块数量，不能直接作为前面公式中的N。
+
+以下是本工具的工程统计定义。设本次运行有N个episode、S个成功episode，成功集合为 $\mathcal S$，失败集合为 $\mathcal F$；$b_i$ 为实际控制步数，$B_i$ 为该episode声明的最大步数预算。
+
+| 统计范围 | 均值 | 含义 |
+| --- | --- | --- |
+| 全体实际（JSON复核项） | $\sum_i b_i/N$ | 成功和失败均使用实际步数，不在终端、Markdown或CSV中单列 |
+| 仅成功 | $\sum_{i\in\mathcal S} b_i/S$ | 仅在成功样本内归一化；S=0时为null |
+| 仅失败实际（JSON复核项） | $\sum_{i\in\mathcal F} b_i/(N-S)$ | 失败样本的实际步数；无失败时为null，不单列到终端、Markdown或CSV展示 |
+| 失败按预算惩罚 | $(\sum_{i\in\mathcal S}b_i+\sum_{i\in\mathcal F}B_i)/N$ | 失败实际步数被对应预算替换 |
+| 成功加权分量（JSON复核项） | $\sum_{i\in\mathcal S} b_i/N$ | 等于SR乘成功条件均值；不在终端、Markdown或CSV中单列，不能标成“仅成功均值” |
+
+报告提供样本数、成功数、SR，以及总体预算惩罚与仅成功两种口径的总步数、均值。当前π0.5＋LIBERO的未成功episode运行至预算上限，因此总体统一使用预算惩罚口径，不再并列展示实际全体步数。没有成功样本时，成功总步数为0，成功均值仍为null。JSON中的实际步数及加权分量用于复核，不作为额外展示指标；对于允许提前失败的其他环境，总体也按声明的预算计入失败代价。
+
+跨任务合并时，任务t有 $n_t$ 个episode、$s_t$ 个成功episode：总体预算均值按 $n_t/N$ 加权，成功条件均值按 $s_t/S$ 加权。任务样本数或成功数不等时，不直接平均各任务的均值。无成功任务对成功总和贡献为0，但其成功均值不填0。多个运行输入分别汇总，不混合成一个样本池。
+
+预算可以统一提供，也可以按任务覆盖；不同任务的失败样本分别使用自己的预算。新运行的 `coverage.json` 记录 `max_primitive_steps`，工具可自动读取。旧结果没有该字段时，需要调用者明确提供预算；不从最大观测步数猜测。若有失败样本缺少预算，惩罚总数和均值为null，并列出缺少预算的任务；实际统计照常输出。全成功样本不需要失败预算。提供的预算不得小于该任务任何已记录episode的实际步数。
+
+从仓库根目录运行：
+
+```bash
+# 新运行：读取目录中的ledger与完成/预算元数据，展开任务明细
+python tools/summarize_experiment.py --input runs/static/pi05_libero/sync-001 --per-task
+
+# 旧LIBERO object结果：显式声明280步预算；两次运行分别汇总
+python tools/summarize_experiment.py \
+  --input runs/static/pi05_libero/sync-001 runs/static/pi05_libero/paper-async-001 \
+  --max-steps 280 --per-task --output results/episode-comparison.csv
+
+# 独立ledger：任务名须与记录一致；可重复传入任务预算
+python tools/summarize_experiment.py --input PATH/TO/episodes.jsonl \
+  --max-steps 280 --task-max-steps TASK_NAME=320 --format json
+```
+
+`--input` 接受一个或多个运行目录或JSONL文件。默认向stdout输出Markdown；`--format markdown|json|csv` 显式选择格式，未指定时可由 `--output` 的扩展名推断。输出文件必须是新文件。JSON始终包含各任务统计；Markdown和CSV使用 `--per-task` 展开任务行。缺失值在JSON中为null，Markdown显示N/A。
+
+工具依据相邻的 `case-manifest.json`、`coverage.json` 核对完整结果的状态、数量和覆盖。未完成或失败的运行默认拒绝，显式添加 `--allow-partial` 才汇总已记录样本，并标为 `partial`。裸ledger或缺少充分完成元数据的输入标为 `unverified`；统计可计算不代表运行已完整。该工具只使用CPU，不加载模型或启动仿真。

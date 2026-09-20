@@ -1,0 +1,2 @@
+# Optional online preparation only; no Torch, CUDA, or simulator dependencies.
+huggingface-hub>=0.34,<2

@@ -1,6 +1,6 @@
 # 仿真时间、异步推理与实验记录协议
 
-版本：设计规范 v0.1。当前提供 manifest/trace 的 schema 与部分事件一致性校验；调度器、模拟器和推理 worker 尚未实现。可执行校验的范围以 schemas、tools/validate_contracts.py 和 tests 为准。
+版本：设计规范 v0.1。当前提供manifest/trace的schema与部分事件一致性校验；π0.5＋LIBERO入口通过兼容外部评测器支持同步与论文静态抽象 `paper_async`。通用调度器、模拟器和推理worker尚未内置。可执行校验的范围以对应入口、schemas、tools/validate_contracts.py和tests为准。
 
 协议的核心是区分 **物理环境时间、程序墙钟时间、动作等待时间和观测年龄**。相同 policy、seed、delay profile 和协议版本应得到可解释、可回放的事件序列。
 
@@ -11,8 +11,13 @@
 | schedule | 定义 | 用途 |
 | --- | --- | --- |
 | `sync` | 采样、推理就绪、执行配置数量的动作，再发下一请求 | 同步基线 |
-| `history_observation` | 同步 host 控制流，但按论文设置提供过去 n′ 个动作对应的观测 | 复现论文的抽象异步实验；明确不宣称真实并发 |
+| `paper_async`（case manifest） | 按论文回取 `t−n′` 的历史观测，并单列解析周期模型 | 静态论文异步实验；不要求host推理与控制并发 |
+| `history_observation` | 同步host控制流，提供过去n′个动作对应的观测 | `paper_async`的实现方式，也可单独作为历史观测消融 |
 | `async` | 当前动作执行中发起后续请求；结果就绪后按队列规则接管 | 验证真实 overlap 和状态一致性 |
+
+`paper_async` 是独立case manifest的标签，不加入或重定义通用v1 schema的schedule枚举。π0.5＋LIBERO使用 `overlap_actions=n′`，范围 `0≤n′≤n_action_steps`，默认执行长度n为5；入口映射到外部 `eval.async_delay`。论文附录B.1规定历史观测偏移，但未规定state和warmup；本case选择 `same_snapshot`（图像和state同源）及 `current_until_available`（历史不足时取当前观测），不得将这两项工程选择归于论文。[The Speedup Paradox，§3.1与B.1](https://arxiv.org/html/2606.28529v2)
+
+论文§3.1 Eq.3的周期是 `C=Tinf+n*Tact−min(Tinf,n′*Tact)`。π0.5入口将其记录为 `paper_model`；默认 `Tact=1000/30 ms` 只是解析模型假设，不修改control/physics dt。`Tinf`必须显式提供并说明来源，缺少时不生成周期或加速比。宿主 `eval_s` 是实际程序耗时，不能代替论文C；历史观测模式的质量实验可独立运行。
 
 | clock / delay mode | 推理时环境如何推进 | 延迟来源 |
 | --- | --- | --- |
@@ -22,7 +27,7 @@
 | `realtime` + `additive` | 在实际就绪后增加额外等待，世界继续推进 | 实际延迟 + 注入延迟 |
 | `realtime` + `target_total` | 仅补足目标总延迟的剩余部分 | `max(0, target - measured_so_far)`；超过目标必须记录 overshoot |
 
-`virtual` 下真实 CPU/GPU 推理耗时只作为 profiling 数据，不再叠加进已经重放的目标延迟，否则会重复计费。若宿主计算比目标 profile 慢，虚拟时钟在最早需要该结果的事件处暂停等待宿主完成，host elapsed 增长但 sim time 不追加此等待；这不是实时能力证明。`zero` 也不是“模型真能零延迟”，报告必须带模式名称。`history_observation` 的 n′ 到 timestamp 映射必须按原实验代码核对，不能自动套用真实异步的等待公式。
+`virtual` 下真实 CPU/GPU 推理耗时只作为 profiling 数据，不再叠加进已经重放的目标延迟，否则会重复计费。若宿主计算比目标 profile 慢，虚拟时钟在最早需要该结果的事件处暂停等待宿主完成，host elapsed 增长但 sim time 不追加此等待；这不是实时能力证明。`zero` 也不是“模型真能零延迟”，报告必须带模式名称。`paper_model` 独立于上述环境时钟/延迟模式；n′对应观测偏移，解析重叠时间不冒充实际测得的并发区间。
 
 ## 时钟及事件字段
 
@@ -66,7 +71,7 @@ release_wait = max(0, result_released - previous_chunk_boundary)
 
 新的虚拟协议用整数 tick 或时间累加器推进，使长期累计的控制时刻与目标时间一致；不要每次延迟独立四舍五入造成系统偏差。历史 Kinetix 复现可单独使用 `legacy_round` 映射以保留原论文 round(tau/33.33ms) 语义，禁止把新映射结果混作历史曲线。小于 physics dt 的延迟也必须保留余量。控制 dt、physics dt、实际积分 substeps 和剩余时间都写入配置。
 
-首版 async 限定每个 policy 一个在途请求，队列有界。观察线程只能写入 snapshot/mailbox，policy worker 不能操作可变 env。触发点由“队列还剩多少动作”或明确模拟/墙钟时间决定；`overlap_actions=n′` 是实验参数，其有效上限受实际队列和推理延迟约束。
+以下队列与Future规则用于可选的实际并发 `async` 扩展，不是 `paper_async` 的验收门槛。首版实际并发限定每个policy一个在途请求，队列有界。观察线程只能写入snapshot/mailbox，policy worker不能操作可变env。触发点由队列剩余动作或明确模拟/墙钟时间决定；请求时机和实际重叠时长以队列与完成事件为准。
 
 默认先完成旧 chunk 再接新 chunk，便于对齐同步 baseline。后续 `replace_pending` 或按 action valid-time 丢弃过时前缀作为独立协议增加，声明新旧 chunk 的交接位置、空队列行为及 late-result 行为。禁止静默重复最后动作、无限缓存结果或随意截断输出来改善数字。
 
@@ -95,7 +100,7 @@ delay profile 附带 scope（仅 forward 或完整 perception→action pipeline�
 
 失败包含 task failure 与 timeout；运行基础设施错误单独计数，不能无声删除或当成策略失败。若不同配置成功的 seed 集不同，成功条件均值可能有选择偏差；报告共同成功 seed 的配对结果及全部 seed 的 SR/penalty。区间计算以独立 episode 为单位；多任务结果分任务汇报后再定义聚合权重。
 
-静态理论用 `N*Tcycle` 作解释，但真实 trace 允许首尾不完整 chunk、变长推理和异步 pipeline fill/drain，主任务时间取事件测量，不能硬套常数公式。把 simulated task time、wall elapsed 和 CUDA duration 分列。
+静态论文模型按 `N*Tcycle` 单列任务时间估计。实际执行trace允许首尾不完整chunk、变长推理和pipeline fill/drain，其任务时间取事件测量，不硬套常数公式。把paper_model估计、simulated task time、wall elapsed和CUDA duration分列。
 
 TISED 的分量拟合、选点与验证使用分开的配置/seed 或 held-out 硬件。明确 O(n) 表述依赖分量可校准和可迁移假设，计入校准成本，并检查非分离的交互项。N 或质量曲线不强行单调拟合；模型不确定性要传递到候选 sweet spot。
 
@@ -103,6 +108,8 @@ TISED 的分量拟合、选点与验证使用分开的配置/seed 或 held-out �
 
 | 场景 | 应观察到的结果 |
 | --- | --- |
+| `paper_async`，n=5、n′=2 | 外部历史偏移为2；历史足够时取 `t−2` 同一快照，不要求后台并发 |
+| `paper_async`，未提供Tinf | 保留历史观测实验设置，周期/加速比缺失，不从host耗时填造 |
 | 同步：2 次推理各 80 ms、每次执行 2×50 ms | 虚拟串行总时间 360 ms，无漏计/重复计延迟 |
 | t=0 采样、80 ms 就绪、120 ms 接管 | age=120 ms，boundary wait=0 |
 | t=0 采样、180 ms 就绪、120 ms 旧块结束 | age=180 ms，wait=60 ms，欠载事件 |
@@ -116,4 +123,4 @@ TISED 的分量拟合、选点与验证使用分开的配置/seed 或 held-out �
 | 0 个成功 episode | SR=0，successful time=null，penalty=预算 |
 | 可视化消费者卡住 | 控制逻辑继续，显示丢帧可计数 |
 
-此表是后续调度器任务的验收规格。当前契约校验只覆盖字段与事件一致性；没有执行这些调度行为测试，也没有运行模型。后续先用 CPU fake clock/policy/simulator 实现时间线，再接真实模型。
+前两项是静态论文异步的配置与模型估计要求；其余是后续实际时钟/队列调度器的验收规格。通用契约校验只覆盖字段与事件一致性，不能证明这些实际调度行为。π0.5入口已有模型smoke，覆盖范围以case记录为准；后续实际并发扩展可先用CPU fake clock/policy/simulator验证时间线。

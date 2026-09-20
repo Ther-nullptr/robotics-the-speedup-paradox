@@ -1,6 +1,6 @@
 # 模型与模拟器接入协议
 
-本协议定义首版接入的责任与交付物，不要求先跑完整论文实验。所有模型当前为 planned；路径是后续任务建议。
+本协议定义首版接入的责任与交付物，不要求先跑完整论文实验。π0.5＋LIBERO已有 [外部源码试跑桥接](../../benchmarks/static/pi05_libero/README.md)，支持同步与论文静态抽象 `paper_async`；其余模型后端按实际接入创建。真实并发可独立扩展，不是论文异步接入的前提。
 
 接入以具体实验case为单位，静态任务与动态任务分别维护入口、控制协议和baseline，见 [架构边界](../architecture.md)。case绑定模型、checkpoint、processor、任务和模拟器；新增Engine或SimulatorAdapter不自动扩展其他case的支持范围。组合是否可用须检查任务匹配权重、观测/动作语义、控制周期及协议能力，不能只检查数组形状。
 
@@ -20,7 +20,7 @@ adapter 提供 reset 行为，声明历史状态、cache、随机流和输出 bu
 | --- | --- | --- | --- |
 | Cosmos-Policy 静态 | vision/DiT/action 输出、层名、候选量化站点、dtype/pack manifest | 静态执行周期、动作块、成功与失败统计 | 固定 observation/noise 下 reference action 对齐；实际 backend 映射 |
 | LingBot-VA 静态 | visual/action KV 写入及读取窗口、跨轮状态、action 解码 | 环境重置、chunk 执行、时间线 | reset 不泄漏旧 KV；可读窗口与存储/写入量分开报告 |
-| π0.5 静态 | vision/language prefix、flow action expert、预处理/normalization | 同步基线、历史观测模式、真实 overlap 分离 | 固定输入/噪声动作对齐；无内部 env.step |
+| π0.5 静态 | vision/language prefix、flow action expert、预处理/normalization | 同步基线、`paper_async`历史快照与周期模型 | 固定输入/噪声动作对齐；n′映射和state/warmup规则明确；无内部 env.step |
 | VLA动态仿真 | 模型侧只消费快照并返回动作 | 世界在等待中推进、延迟采样、旧动作/hold规则、terminal | CPU scripted policy验证运动和延迟；之后接DOM等匹配环境 |
 | Kinetix原生RL | 任务匹配Flax网络、参数PyTree、动作分布、可选carry与PRNG | 原生JAX环境/rollout、延迟状态与按环境终止 | 固定关卡/参数动作对齐、真实policy动作被环境消费、reset与时间线，见 [专用入口](../../benchmarks/dynamic/kinetix/README.md) |
 
@@ -29,6 +29,8 @@ Cosmos-Policy 和 LingBot-VA 的机器人适配器属于本仓库；后续其他
 ## 量化与融合接口
 
 同一模型/任务比较量化、异步及其组合时，使用 [组合实验协议](composable-experiments.md)：精度配置作用于policy构建，调度配置作用于runner，保持共同实验案例与统一记录格式。
+
+静态 `paper_async` 的 `overlap_actions=n′` 满足 `0≤n′≤n_action_steps`，π0.5入口映射到外部 `eval.async_delay`。按论文回取 `t−n′` 观测；论文未规定state和历史不足时的处理，本case显式选择 `same_snapshot` 与 `current_until_available`。该标签属于独立case manifest，通用v1 schema的 `async` 仍表示实际并发。
 
 量化配置独立于 policy 与 kernel。每层记录模块路径、weight/activation/accumulator dtype、scale/group/zero-point 规则、calibration/pack 版本、实际 backend、fallback 原因。fake quant 只用于质量/方法分析，不作为低比特性能证明。
 
@@ -45,6 +47,8 @@ LIBERO、RoboCasa、RoboTwin、Kinetix、DOM 采用各自 adapter。公共接口
 `observe()` 返回真实采样时刻的快照；`step(action)` 只推进已声明的 control/physics tick；任务显式给出等待期间 robot control 和世界动力学规则。`render()` 是观测读操作，不能改变状态或阻塞控制。
 
 delay profile 是参数化外部输入，至少标识硬件、模型/配置、计时 scope、原始样本与采样方式。`zero`、虚拟重放、真实计时、additive、target-total 分开；对 target-total 记录 overshoot，对虚拟重放避免叠加宿主计算耗时。完整定义见 [仿真协议](simulation.md)。
+
+论文周期估计单列为 `paper_model`，以声明的 `Tinf`、`Tact` 和n′计算。π0.5默认 `Tact=1000/30 ms` 不改变环境步长；缺少 `Tinf` 时保留质量实验与观测偏移设置，不填造周期/加速比，也不用宿主 `eval_s` 代替。
 
 ## 可视化消费者接口
 

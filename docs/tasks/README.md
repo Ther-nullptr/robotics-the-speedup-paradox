@@ -6,8 +6,8 @@
 
 | 归属 | 方向 | 前置条件与主要交付 |
 | --- | --- | --- |
-| 静态 | π0.5＋LIBERO | 任务匹配权重/processor，固定输入动作对齐，同步闭环与纯异步 |
-| 静态 | Cosmos-Policy＋LIBERO/RoboCasa | 各自case的权重、统计量和环境，动作对齐与优化站点 |
+| 静态 | π0.5＋LIBERO | 已有object全量同步/论文异步；下一步为完整推理测量与经过质量验证的轻量化 |
+| 静态 | Cosmos-Policy＋LIBERO/RoboCasa | 已有独立单环境入口与GPU smoke；扩大任务覆盖，补齐完整环境安装与推理测量 |
 | 静态 | LingBot-VA | 先明确任务组合，再验证KV读写/reset与动作 |
 | 动态 | DynamicVLA＋DOM | 单场景时钟、历史观测、延迟与动作生效、终止/reset |
 | 动态 | [Kinetix原生策略与rollout](../../benchmarks/dynamic/kinetix/README.md) | 绑定checkpoint/关卡和观测动作类型，再验证carry/PRNG、JAX步进、延迟与终止；独立于VLA执行器 |

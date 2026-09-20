@@ -1,52 +1,116 @@
 # Robotics: The Speedup Paradox
 
-面向模型推理与机器人实验的基础工具。目前已提供 CPU 数据契约校验、baseline 加速比计算和轨迹分析；模型推理后端与模拟器接入仍在规划中。
+[English](README.en.md) · [环境配置](docs/environment_setup.md) · [代码架构](docs/architecture.md) · [贡献与 PR](CONTRIBUTING.md)
 
-实验按静态和动态任务分别组织。每个case绑定模型、权重、任务、环境及协议，只在已验证的范围内选择量化或调度方案。
+面向具身模型推理与闭环实验的基础设施：固定模型、任务和场景，比较同步执行、论文静态异步及后续轻量化方案，并统一记录成功率、控制步数和实验配置。
 
-| 实验入口 | 当前规划 |
-| --- | --- |
-| [静态任务](benchmarks/static/README.md) | π0.5＋LIBERO；Cosmos-Policy＋对应LIBERO/RoboCasa任务；LingBot-VA的任务组合待明确 |
-| [动态任务](benchmarks/dynamic/README.md) | DynamicVLA＋DOM；[Kinetix](benchmarks/dynamic/kinetix/README.md)保留原生JAX策略、环境与rollout |
+**当前为开发预览。** 已有三个可运行静态 case，模型和模拟器由兼容外部源码提供；CPU 分析工具可独立使用。项目自身代码许可证尚待确定，第三方来源见 [许可与发布状态](THIRD_PARTY_NOTICES.md)。
 
-两个目录已提供case范围、文件归属和接入验收说明，运行代码尚未实现。两条路径共享事件/指标约定和分析工具，按能力复用执行与backend组件；各case维护自己的控制协议和baseline，任务类型与同步/异步调度分别声明。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
+## 功能与验证范围
 
-## 快速开始
+| 功能 / case | 当前能力 | 已有验证 |
+| --- | --- | --- |
+| [π0.5＋LIBERO](benchmarks/static/pi05_libero/README.md) | 外部 LeRobot/VLASH evaluator 桥接；原精度 sync / `paper_async` | `libero_object` 各500回合：同步494/500，n′=2异步464/500 |
+| [Cosmos＋LIBERO](benchmarks/static/cosmos_libero/README.md) | 独立 engine、原生模拟器、单环境 runner；H=16 | 原生动作对齐；同一 object 任务同步137步、异步154步成功 |
+| [Cosmos＋RoboCasa](benchmarks/static/cosmos_robocasa/README.md) | 三相机输入、H=32、场景初始化核对；单环境运行 | `TurnOffMicrowave` 固定场景：同步277步、异步292步成功 |
+| [资源准备](tools/RESOURCE_PREPARATION.md) | 下载或复用 checkpoint、tokenizer、统计量、T5；训练数据按需下载 | 两类模型本地资源复用、真实小文件下载、启动预检 |
+| [实验统计](tools/summarize_experiment.py) | 成功率、失败按预算惩罚的总体步数、仅成功步数；按任务汇总 | CLI 与实验结束时自动调用 |
+| [轨迹分析](tools/embodied/README.md) | 轨迹绘制、速度、加速度、jerk | CPU 数值工具与合成样例 |
+| [契约与加速比](docs/protocols/speedup-metrics.md) | manifest/trace 校验、固定 baseline 的加速比计算 | CPU 契约和显式输入计算 |
 
-Python 3.11 或 3.12，从本仓库根目录运行：
+Cosmos 数字是单回合闭环结果，不能代替全任务集成功率。π0.5全量结果的任务、初态和采样配置见对应case说明；未采集匹配的推理时延时不报告论文加速比。当前没有内置全模型量化预设。
+
+LingBot-VA、DynamicVLA＋DOM 和 Kinetix 仍在规划中。静态与动态任务分别组织，模型和模拟器按已验证的 case 绑定；接口形状兼容不代表任意组合可用。
+
+## 快速开始：CPU 工具
+
+推荐 Python 3.11 或 3.12；以下步骤不下载模型、不需要 GPU：
 
 ```bash
+git clone https://github.com/Ther-nullptr/robotics-the-speedup-paradox.git
+cd robotics-the-speedup-paradox
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
+
 python tools/validate_contracts.py --examples
 python tools/compare_speedups.py --input examples/speedups/synthetic.json --markdown
 python tools/embodied/trajectory_metrics.py --input tools/embodied/examples/smooth.csv
-python -m pytest -q
 ```
 
-也可以用 `uv venv --python 3.11 .venv` 创建环境，再运行 `uv pip install -r requirements-dev.txt`。上述工具不加载模型或使用GPU；示例是synthetic数据。绘图额外安装 `tools/embodied/requirements-plot.txt`，详见 [轨迹工具说明](tools/embodied/README.md)。
+示例为合成数据。绘图额外安装 `tools/embodied/requirements-plot.txt`。本仓可选安装为Python包 `python -m pip install -e .`；源码安装本身不会安装模型或模拟器运行栈。
 
-## 工具与规范
+## 准备模型并启动实验
 
-| 入口 | 内容 |
+先按 [环境指南](docs/environment_setup.md) 建立对应 case 的独立 GPU 环境，并准备兼容外部源码。下载工具运行在 CPU 环境即可：
+
+```bash
+python -m pip install -r tools/requirements-download.txt
+python tools/prepare_resources.py --case cosmos_robocasa --dry-run
+```
+
+去掉 `--dry-run` 执行下载；可通过 `--source`、`--python` 和 case 专用路径参数生成启动配置，或使用case的 `paths.env.example` 绑定已有资源。默认位置如下：
+
+| 内容 | 位置 |
 | --- | --- |
-| [贡献协议](CONTRIBUTING.md) / [AGENTS.md](AGENTS.md) | Issue、PR、验收与AI协作 |
-| [架构](docs/architecture.md) / [图稿源码](docs/diagrams/README.md) | 模块边界及可重建的架构图 |
-| [数据契约](docs/protocols/artifacts.md) / [schemas](schemas/README.md) | manifest/trace格式及校验范围 |
-| [组合实验](docs/protocols/composable-experiments.md) / [加速比口径](docs/protocols/speedup-metrics.md) | 同模型任务下的方案比较与计算 |
-| [轨迹小工具](tools/embodied/README.md) | 路径、速度、加速度、jerk和绘图 |
-| [仿真协议](docs/protocols/simulation.md) / [多后端](docs/protocols/simulator-backends.md) / [依赖修改](docs/protocols/simulator-dependencies.md) | 时钟、环境推进、版本与fork接入 |
-| [模型接口](docs/protocols/model-adapters.md) / [后端状态](docs/protocols/backend-state.md) / [可视化](docs/protocols/visualization.md) | adapter、cache/reset、事件与帧映射 |
-| [edge-model-lightweight 外部 skill](https://github.com/Ther-nullptr/edge-model-lightweight-skill) | 后续搭建与优化的主要方法参考：完整计时、profile、收益估算和质量验证；按访问权限独立安装 |
-| [端侧优化 skill](.agents/skills/edge-inference-optimization/SKILL.md) | 按实测热点优化并核对质量 |
+| 模型和可选训练数据 | `~/.cache/robotics/hub/`，可用 `--root` 或 `ROBOTICS_RESOURCE_ROOT` 修改 |
+| 生成的路径配置 | `~/.cache/robotics/env/<case>.env` |
+| LIBERO资产 | `~/.cache/libero/assets/` |
+| RoboCasa厨房资产 | 对应fork的 `robocasa/models/assets/`，单独准备 |
+| 实验输出 | 调用者显式指定的 `--output-dir` |
 
-## 版本管理边界
+以准备好资源的 RoboCasa 为例：
 
-Git保留代码、测试、依赖、schema、小型合成样例、工具说明、稳定协议和图稿源码。研究综述、阶段任务卡、个人交接记录、生成图表/HTML、运行日志、性能分析报告和临时备份留在本地；具体忽略规则见 [.gitignore](.gitignore)。共享任务状态与交接摘要记录在Issue/PR，不要求为每次工作新增Markdown文件。
+```bash
+source ~/.cache/robotics/env/cosmos_robocasa.env
+bash benchmarks/static/cosmos_robocasa/run.sh \
+  --task TurnOffMicrowave --episodes 1 \
+  --schedule paper_async --overlap-actions 2 \
+  --output-dir runs/static/cosmos_robocasa/demo-001 --dry-run
+```
 
-从干净克隆可运行工具并阅读必要说明。生成的SVG/HTML/PNG按需重建，跟踪文档不依赖这些本地产物。根工作区的研究资料不属于本仓库。
+预检通过后，去掉 `--dry-run` 并添加 `--gpu 3`，其中GPU编号按机器选择；添加 `--record-video` 录制完整动作。每次真实实验必须选择新的输出目录。实验入口使用离线模式，缺少资源时明确报错。
 
-CI定义和协作模板已提供；远端CI、分支保护和review权限尚待维护者启用。模型/模拟器功能未实现前，不将协议校验或合成结果称为性能或闭环实验验证。
+完整命令：[π0.5＋LIBERO](benchmarks/static/pi05_libero/README.md) · [Cosmos＋LIBERO](benchmarks/static/cosmos_libero/README.md) · [Cosmos＋RoboCasa](benchmarks/static/cosmos_robocasa/README.md)
 
-背景论文：[The Speedup Paradox](https://arxiv.org/abs/2606.28529)。自有代码许可证尚待维护者确定，第三方引入按 [来源记录](THIRD_PARTY_NOTICES.md) 处理。
+## 实验协议与输出
+
+`paper_async` 使用控制步 `t−n′` 的历史观测：图像和 proprio 来自同一快照，历史不足使用当前观测。这是论文静态异步抽象；当前 runner 串行推进环境。推理时间、仿真时间和宿主墙钟分别记录，完整口径见 [仿真协议](docs/protocols/simulation.md)。
+
+每次运行保存配置与来源、checkpoint加载审计、逐episode记录和汇总；Cosmos入口还保存逐请求历史偏移及自动 `run.log`。π0.5控制台日志按需重定向或用 `tee` 保存。视频默认关闭，开启后含初始帧、全部执行动作及终止帧；RoboCasa保存三视角横排视频。
+
+实验结束自动输出成功率与两种步数统计：全体episode中失败按声明预算计入，以及仅成功episode的平均步数。可以独立重新统计已有实验：
+
+```bash
+python tools/summarize_experiment.py \
+  --input runs/static/cosmos_robocasa/demo-001 --per-task
+```
+
+RoboCasa的 `--reference-run` 在首次推理前核对baseline初始化；不一致时运行失败，不计为策略失败。详情见 [case说明](benchmarks/static/cosmos_robocasa/README.md)。
+
+## 代码结构
+
+```text
+benchmarks/static/             三个静态case的CLI、配置与生命周期
+benchmarks/dynamic/            动态case规划；尚无可运行实现
+src/robotics_bench/engines/     Cosmos模型加载、预处理与动作块推理
+src/robotics_bench/simulators/  LIBERO和RoboCasa原生环境适配
+src/robotics_bench/protocols/   静态动作执行与历史观测选择
+tools/                        资源准备、契约校验、统计和轨迹分析
+schemas/                      通用数据契约；case运行格式另行声明
+tests/                        CPU行为、数据契约与边界检查
+docs/                         环境、架构及稳定协议
+.github/                      Issue/PR模板、CPU CI和协作说明
+```
+
+[架构指南](docs/architecture.md) 说明实际调用关系、模型与环境边界、episode生命周期及后续扩展位置。
+
+## 参与开发
+
+使用主题分支和 PR；提交标题和 PR 使用中英文说明。PR写清目的、改动范围、实际验证、影响与回退，小改动可以各用一句话。默认通过 PR 的 merge commit 进入 `main`，由维护者完成审核和合并。详见 [CONTRIBUTING](CONTRIBUTING.md) 和 [AI协作约定](AGENTS.md)。
+
+Git只保留源码、必要配置、测试、稳定文档及小型合成样例。模型、数据、视频、日志、临时笔记和生成图表留在本地，参见 [.gitignore](.gitignore)。GPU实验不进入公共CPU CI；远端分支保护的实际启用状态须单独核对。
+
+## 参考与许可
+
+方法背景：[The Speedup Paradox](https://arxiv.org/abs/2606.28529)。模型与模拟器的出处和独立条款见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。自有代码许可证尚未选定；当前未声明项目已完成正式开源发布。

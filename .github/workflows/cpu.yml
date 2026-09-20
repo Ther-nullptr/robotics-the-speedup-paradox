@@ -31,11 +31,11 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
       - name: Check Python style
         run: |
-          python -m ruff check tools tests
-          python -m ruff format --check tools tests
+          python -m ruff check tools tests benchmarks src
+          python -m ruff format --check tools tests benchmarks src
       - name: Validate synthetic contract examples
         run: python tools/validate_contracts.py --examples
       - name: Run CPU tests
         run: python -m pytest -q
       - name: Check Python syntax
-        run: python -m compileall -q tools
+        run: python -m compileall -q tools benchmarks src

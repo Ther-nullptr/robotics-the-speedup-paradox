@@ -11,29 +11,29 @@ info = [
     (
         "01-architecture",
         "总体架构",
-        "公共核心、机器人 adapter 与外部仿真环境怎样分工。",
-        "实线表示调用或依赖，虚线表示数据/开发约束。绿色为已有本地文件，蓝色为目标代码，灰色为外部调用方或环境。",
+        "三个静态case、模型/模拟器适配与CPU分析工具的分工。",
+        "实线表示调用或结果传递，虚线表示契约约束。绿色为已有模块，蓝色为规划方向，灰色为外部模型和环境。",
         "architecture",
     ),
     (
         "02-async-loop",
         "异步闭环",
-        "推理与环境推进重叠，输出完成后按队列规则交接动作。",
-        "这是逻辑并行的手算例子，不是实测：t=0 采样，80 ms 完成，120 ms 执行动作；等待为 0，观测年龄为 120 ms。环境执行侧可由 runner、独立后端循环或编译执行实现。",
+        "当前静态runner如何选择历史快照并执行动作前缀。",
+        "这是当前paper_async串行实现：控制步t读取t−n′观测，历史不足用当前快照；图像和proprio同步延迟。推理时延与论文周期另行测量和声明。",
         "sequence",
     ),
     (
         "03-inference-path",
         "模型推理",
-        "模型专用语义与通用算子执行后端的边界。",
-        "全部推理节点均待实现。实线是请求/数据流，虚线是状态或加载依赖及离线取证；验收不进入每次推理热路径，融合只在 profile 证明有益时选择。",
+        "Cosmos已实现的加载、原生预处理与动作块输出。",
+        "实线是请求/数据流，虚线表示加载后保留的模型与资源。原生模型来自外部源码，加载审计在推理循环之外；当前没有内置全模型量化backend。",
         "inference",
     ),
     (
         "04-contribution-flow",
         "协作与 PR",
         "一项需求如何进入主仓和必要的模拟器 fork。",
-        "已有的是模板与 CPU 校验文件。fork 按需建立；先合并 fork 取得可获取 SHA，再更新主仓依赖。远端 CI 与强制 review 尚未启用。",
+        "采用主题分支和双语提交/PR，相关检查与审阅通过后由维护者合并。模拟器内部改动走独立fork PR。GitHub服务端强制规则需单独核对。",
         "workflow",
     ),
 ]
@@ -82,7 +82,7 @@ main{max-width:1488px;margin:auto;padding:22px 24px 40px}nav{display:grid;grid-t
 </section>
 <div class="foot"><div class="legend"><span><i class="dot green"></i>已有本地基座</span><span><i class="dot blue"></i>目标实现 / 流程</span><span><i class="dot gray"></i>外部环境 / 数据</span></div><span>每张图的箭头和配色含义见图下注释 · 可离线查看</span></div>
 <details class="source"><summary>查看当前图的 Mermaid 源码</summary><pre><code id="source"></code></pre></details>
-<p class="foot">当前已有 schema、validator、CPU tests 与协作文件；模型推理、仿真运行时和业务 viewer 尚未实现。此页面只展示架构图。</p>
+<p class="foot">当前已有三个静态case、模型/模拟器适配、CPU分析工具与协作文件；动态运行路径仍在规划。本页面是架构图册。</p>
 <noscript>请使用同目录 README.md 或 rendered/ 中的 SVG 查看完整图稿。</noscript>
 </main>
 <script id="diagram-data" type="application/json">__DATA__</script>
