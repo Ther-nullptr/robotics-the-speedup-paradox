@@ -4,6 +4,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import sys
+from types import ModuleType
 
 import pytest
 
@@ -176,6 +178,29 @@ def test_infrastructure_error_does_not_become_a_failed_trial(setup):
     assert (output / "episodes.jsonl").read_text() == ""
     assert not (output / "episode-summary.json").exists()
     assert all(resource.closed for resource in [*engines, *simulators])
+
+
+def test_video_encoder_receives_keyword_fps_and_complete_episode(setup, monkeypatch):
+    plan, engine, suite, *_ = setup
+    plan["options"]["video_episodes_per_task"] = "all"
+    calls = []
+
+    def encode(path, frames, *, fps):
+        calls.append((path, frames, fps))
+        path.write_bytes(b"fake encoded video")
+
+    imageio = ModuleType("imageio")
+    imageio.__path__ = []
+    imageio.v2 = ModuleType("imageio.v2")
+    imageio.v2.mimsave = encode
+    monkeypatch.setitem(sys.modules, "imageio", imageio)
+    monkeypatch.setitem(sys.modules, "imageio.v2", imageio.v2)
+    entry().execute(plan, engine_type=engine, suite_type=suite)
+    assert len(calls) == 3
+    assert all(frames == [0, 1, 2, 3] and fps == 30 for _, frames, fps in calls)
+    output = Path(plan["output_dir"])
+    result = json.loads((output / "eval_results.json").read_text())
+    assert sum(len(paths) for paths in result["video_paths"].values()) == 3
 
 
 def test_case_refuses_existing_output(setup):

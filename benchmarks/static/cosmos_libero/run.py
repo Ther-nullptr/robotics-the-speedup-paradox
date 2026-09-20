@@ -246,7 +246,7 @@ def execute(plan, *, engine_type=None, suite_type=None):
                     output,
                     len(planned) if limit == "all" else limit,
                     options["video_fps"],
-                    imageio.mimsave,
+                    lambda path, frames, fps: imageio.mimsave(path, frames, fps=fps),
                 )
             started = time.perf_counter()
             with (
@@ -367,6 +367,7 @@ def execute(plan, *, engine_type=None, suite_type=None):
         except BaseException as exc:
             manifest["status"] = "failed"
             manifest["error"] = f"{type(exc).__name__}: {exc}"
+            print(f"Run failed: {manifest['error']}", file=sys.stderr, flush=True)
             write_json(
                 output / "failure.json",
                 {"error": manifest["error"], "traceback": traceback.format_exc()},

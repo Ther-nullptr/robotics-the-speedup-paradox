@@ -16,16 +16,24 @@ from .cosmos_load_guard import checkpoint_load_guard
 
 @contextmanager
 def _libero_import_context(source):
-    """Bind native platform detection independently of the caller's argv."""
+    """Bind native LIBERO imports and config registration to the source root.
+
+    Native experiment registration checks source-relative checkpoint paths
+    before applying the caller's explicit checkpoint override. Run the serial
+    import/load phase from that root and restore all process state afterward.
+    """
     previous_argv = sys.argv
     previous_path = sys.path[:]
+    previous_cwd = Path.cwd()
     sys.argv = ["robotics_bench_libero"]
     sys.path.insert(0, str(source))
     try:
+        os.chdir(source)
         yield
     finally:
         sys.argv = previous_argv
         sys.path[:] = previous_path
+        os.chdir(previous_cwd)
 
 
 def _check_import_sources(source):
@@ -187,7 +195,7 @@ class CosmosEngine:
     def load(self, task_descriptions: list[str], audit_path: Path):
         if self._model is not None:
             raise RuntimeError("CosmosEngine is already loaded")
-        audit_path = Path(audit_path)
+        audit_path = Path(audit_path).expanduser().resolve()
         audit_path.parent.mkdir(parents=True, exist_ok=True)
         audit_path.write_text(json.dumps({"status": "loading"}) + "\n")
         try:

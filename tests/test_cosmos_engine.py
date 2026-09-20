@@ -180,13 +180,24 @@ def engine_api():
 def test_libero_import_context_restores_process_state_on_exception(tmp_path):
     module = engine_api()
     argv, path = sys.argv, sys.path[:]
+    cwd = Path.cwd()
     with pytest.raises(RuntimeError, match="import failure"):
         with module._libero_import_context(tmp_path):
             assert sys.argv == ["robotics_bench_libero"]
             assert sys.path[0] == str(tmp_path)
+            assert Path.cwd() == tmp_path
             raise RuntimeError("import failure")
     assert sys.argv is argv
     assert sys.path == path
+    assert Path.cwd() == cwd
+
+
+def test_libero_import_context_restores_cwd_after_success(tmp_path):
+    module = engine_api()
+    cwd = Path.cwd()
+    with module._libero_import_context(tmp_path):
+        assert Path.cwd() == tmp_path
+    assert Path.cwd() == cwd
 
 
 def test_preimported_cosmos_from_another_source_is_rejected(tmp_path, monkeypatch):
@@ -239,7 +250,7 @@ def native_boundary(tmp_path, monkeypatch):
     )
 
     def load_model(**kwargs):
-        calls.append(("load", kwargs, sys.argv[:]))
+        calls.append(("load", kwargs, sys.argv[:], Path.cwd()))
         loaded = loader.instantiate(None)
         loaded.load_state_dict({"net.weight": Tensor()}, strict=False)
         return loaded, resolved_config
@@ -297,6 +308,7 @@ def test_load_uses_native_config_vae_override_and_restores_argv(native_boundary)
         "model.config.tokenizer.vae_pth=" + str(engine.vae_checkpoint)
     ]
     assert "libero" in " ".join(load[2])
+    assert load[3] == engine.source
     assert sys.argv == before
     assert json.loads(b.audit.read_text())["status"] == "passed"
     assert engine.metadata["batch_size"] == 1
@@ -304,6 +316,26 @@ def test_load_uses_native_config_vae_override_and_restores_argv(native_boundary)
         "tokenizer_vae_pth": str(engine.vae_checkpoint),
         "dataset_chunk_size": 16,
     }
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_relative_audit_remains_in_callers_directory(
+    native_boundary, tmp_path, monkeypatch, fail
+):
+    b = native_boundary
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    if fail:
+        b.resolved_config.dataloader_train.dataset.chunk_size = 32
+        with pytest.raises(RuntimeError, match="chunk_size"):
+            b.engine.load(["pick up cup"], Path("artifacts/load.json"))
+    else:
+        b.engine.load(["pick up cup"], Path("artifacts/load.json"))
+    assert Path.cwd() == caller
+    audit = json.loads((caller / "artifacts/load.json").read_text())
+    assert audit["status"] == ("failed" if fail else "passed")
+    assert not (b.engine.source / "artifacts").exists()
 
 
 @pytest.mark.parametrize("field", ["vae_pth", "chunk_size"])
