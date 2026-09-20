@@ -2,6 +2,8 @@
 
 本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO和Cosmos＋LIBERO入口。Cosmos引擎、原生模拟器适配与单环境runner位于 `src/robotics_bench/`。静态异步采用论文抽象 `paper_async`；尚未内置完整模型实现或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
 
+Cosmos＋RoboCasa已提供单环境入口，当前验证限于TurnOffMicrowave固定场景的sync/paper_async GPU smoke。RoboCasa采用三相机、H=32、独立robosuite1.5.1环境，reset后才读取本回合指令；不要复用LIBERO的H=16或预先固定语言。`--reference-run` 校验相同场景初始化，训练数据与厨房资产分别准备。
+
 `tools/prepare_resources.py` 提供独立的可选联网下载/本地复用入口，默认模型和数据集缓存位于 `~/.cache/robotics/hub`，LIBERO资产沿用 `~/.cache/libero/assets`。下载不进入公共CPU CI，运行入口继续离线；资源准备成功不等于新机运行环境已经安装。
 
 ## 开始工作

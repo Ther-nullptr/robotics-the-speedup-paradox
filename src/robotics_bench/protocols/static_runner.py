@@ -57,14 +57,15 @@ def run_episode(
         raise ValueError("overlap_actions must not exceed n_action_steps")
     if schedule == "sync" and overlap_actions:
         raise ValueError("sync requires overlap_actions=0")
-    description = simulator.description
-    if not isinstance(description, str) or not description.strip():
-        raise ValueError("simulator.description must be a nonempty string")
     for name, callback in (("on_frame", on_frame), ("on_request", on_request)):
         if callback is not None and not callable(callback):
             raise TypeError(f"{name} must be callable or None")
 
     observation = simulator.reset(init_state_id, seed=env_seed)
+    # Scene-dependent instructions (RoboCasa) become available only after reset.
+    description = simulator.description
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError("simulator.description must be a nonempty string")
     engine.reset((task, init_state_id, env_seed))
     if on_frame is not None:
         on_frame(simulator.render())

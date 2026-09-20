@@ -1,6 +1,6 @@
 # 模型和数据资源准备
 
-[prepare_resources.py](prepare_resources.py) 为 `cosmos_libero` 和 `pi05_libero` 提供显式资源准备命令。实验入口仍按本地路径运行，并启用离线模式；缺少文件时会报错，不在推理或评测途中下载。
+[prepare_resources.py](prepare_resources.py) 为 `cosmos_libero`、`pi05_libero` 和 `cosmos_robocasa` 提供显式资源准备命令。实验入口仍按本地路径运行，并启用离线模式；缺少文件时会报错，不在推理或评测途中下载。
 
 ## 默认下载位置
 
@@ -9,6 +9,7 @@
 | 模型、VAE、文本 tokenizer | `~/.cache/robotics/hub/models--ORG--REPO/snapshots/COMMIT/` |
 | 可选训练/校准轨迹 | `~/.cache/robotics/hub/datasets--ORG--REPO/snapshots/COMMIT/` |
 | LIBERO mesh、texture、场景资产 | `~/.cache/libero/assets/` |
+| RoboCasa 厨房资产（单独准备） | 兼容fork源码下的 `robocasa/models/assets/` |
 | 生成的路径配置 | `~/.cache/robotics/env/CASE.env` |
 | 下载来源记录 | 与 env 同目录的 `CASE.env.resources.json` |
 | 生成的 LIBERO 配置 | `~/.cache/robotics/configs/CASE/config.yaml` |
@@ -18,6 +19,8 @@
 **LIBERO assets 是例外，不随 `--root` 移动。** 当前验证的 LIBERO wheel 在包内资产缺失时直接查找 `~/.cache/libero/assets`，忽略 YAML 中的 assets 路径。工具沿用这个目录，避免下载到了另一个位置却无法加载。原生包内已有 assets 时仍按该包的解析优先级使用。自定义 fork 的资产布局可继续使用 case 的手工路径配置。
 
 模型、下载缓存、数据和生成配置均不进入 Git。放在仓库内时，使用已忽略的 `.local/`、`artifacts/` 等目录。
+
+RoboCasa 使用 `--case cosmos_robocasa`，准备专用Policy checkpoint、统计量、T5和VAE，不下载LIBERO资产。`--robocasa-source` 绑定兼容fork，`--source` 仍是Cosmos源码；模型环境通过 `--python` 指定。生成的变量采用 `ROBOTICS_COSMOS_ROBOCASA_*`，避免误用LIBERO权重。厨房资产通过该fork的下载脚本单独准备，详见 [RoboCasa case说明](../benchmarks/static/cosmos_robocasa/README.md)。`--with-dataset` 对应 `nvidia/RoboCasa-Cosmos-Policy`，为可选训练/校准轨迹。
 
 ## 新机器准备命令
 

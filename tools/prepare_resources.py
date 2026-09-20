@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare explicit local resources for a static LIBERO case before evaluation."""
+"""Prepare explicit local model resources for a static case before evaluation."""
 
 import argparse
 from fnmatch import fnmatch
@@ -25,7 +25,9 @@ ASSET_DIRECTORIES = (
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
-        "--case", choices=("cosmos_libero", "pi05_libero"), required=True
+        "--case",
+        choices=("cosmos_libero", "pi05_libero", "cosmos_robocasa"),
+        required=True,
     )
     parser.add_argument(
         "--root",
@@ -56,6 +58,11 @@ def build_parser():
         "--source", type=Path, help="Compatible external case source checkout"
     )
     parser.add_argument("--python", type=Path, help="Existing case Python executable")
+    parser.add_argument(
+        "--robocasa-source",
+        type=Path,
+        help="Compatible RoboCasa fork; kitchen assets are prepared separately",
+    )
     parser.add_argument(
         "--libero-root",
         type=Path,
@@ -96,6 +103,10 @@ def _resource(name, repo, required, *, patterns=None, revision="main", kind="mod
 def build_plan(args):
     root = args.root.expanduser().resolve()
     assets = Path.home() / ".cache/libero/assets"
+    if args.case == "cosmos_robocasa" and args.libero_root:
+        raise ValueError("--libero-root does not apply to RoboCasa")
+    if args.case != "cosmos_robocasa" and args.robocasa_source:
+        raise ValueError("--robocasa-source requires --case cosmos_robocasa")
     if args.case == "cosmos_libero":
         resources = [
             _resource(
@@ -118,6 +129,32 @@ def build_plan(args):
         dataset = _resource(
             "dataset",
             "nvidia/LIBERO-Cosmos-Policy",
+            ["all_episodes/*.hdf5", "success_only/*.hdf5"],
+            patterns=["*"],
+            kind="dataset",
+        )
+    elif args.case == "cosmos_robocasa":
+        resources = [
+            _resource(
+                "policy",
+                "nvidia/Cosmos-Policy-RoboCasa-Predict2-2B",
+                [
+                    "Cosmos-Policy-RoboCasa-Predict2-2B.pt",
+                    "robocasa_dataset_statistics.json",
+                    "robocasa_t5_embeddings.pkl",
+                ],
+                revision="4b2a04c80d97202f86127ebec80461e8016ec1dc",
+            ),
+            _resource(
+                "vae",
+                "nvidia/Cosmos-Predict2-2B-Video2World",
+                ["tokenizer/tokenizer.pth"],
+                revision="f50c09f5d8ab133a90cac3f4886a6471e9ba3f18",
+            ),
+        ]
+        dataset = _resource(
+            "dataset",
+            "nvidia/RoboCasa-Cosmos-Policy",
             ["all_episodes/*.hdf5", "success_only/*.hdf5"],
             patterns=["*"],
             kind="dataset",
@@ -156,14 +193,15 @@ def build_plan(args):
             kind="dataset",
             revision="a1aaacb7f6cd6ee5fb43120f673cebb0cfea7dd4",
         )
-    resources.append(
-        _resource(
-            "libero-assets",
-            "jadechoghari/libero-assets",
-            [f"{name}/*" for name in ASSET_DIRECTORIES],
-            patterns=["*"],
+    if args.case != "cosmos_robocasa":
+        resources.append(
+            _resource(
+                "libero-assets",
+                "jadechoghari/libero-assets",
+                [f"{name}/*" for name in ASSET_DIRECTORIES],
+                patterns=["*"],
+            )
         )
-    )
     if args.with_dataset:
         resources.append(dataset)
     names = {item["name"] for item in resources}
@@ -196,7 +234,7 @@ def build_plan(args):
             key: str(getattr(args, key).expanduser().resolve())
             if getattr(args, key)
             else None
-            for key in ("source", "libero_root")
+            for key in ("source", "libero_root", "robocasa_source")
         },
         # Resolving a venv's Python symlink would silently select its base interpreter.
         "python": str(args.python.expanduser().absolute()) if args.python else None,
@@ -350,7 +388,7 @@ def prepare(plan, *, hub=None):
     if source:
         entry = (
             "cosmos_policy/config/config.py"
-            if plan["case"] == "cosmos_libero"
+            if plan["case"].startswith("cosmos_")
             else "vlash/eval_libero.py"
         )
         if not (source / entry).is_file():
@@ -360,6 +398,13 @@ def prepare(plan, *, hub=None):
     if plan["python"] and not os.access(plan["python"], os.X_OK):
         raise ValueError(
             "The case Python executable does not exist or is not executable"
+        )
+    if plan.get("robocasa_source"):
+        _validate_file(Path(plan["robocasa_source"]) / "robocasa/__init__.py")
+    if plan["case"] == "cosmos_robocasa" and source:
+        _validate_file(
+            source
+            / "cosmos_policy/experiments/robot/robocasa/robocasa_controller_configs.pkl"
         )
     config = None
     if plan["libero_root"]:
@@ -402,10 +447,21 @@ def prepare(plan, *, hub=None):
             result = download_resource(resource, root, hub)
         results.append(result)
     paths = {item["name"]: Path(item["path"]) for item in results}
-    cosmos = plan["case"] == "cosmos_libero"
-    prefix = "ROBOTICS_COSMOS_" if cosmos else "ROBOTICS_"
+    cosmos = plan["case"].startswith("cosmos_")
+    robocasa = plan["case"] == "cosmos_robocasa"
+    domain = "robocasa" if robocasa else "libero"
+    prefix = (
+        "ROBOTICS_COSMOS_ROBOCASA_"
+        if robocasa
+        else ("ROBOTICS_COSMOS_" if cosmos else "ROBOTICS_")
+    )
+    model_file = (
+        "Cosmos-Policy-RoboCasa-Predict2-2B.pt"
+        if robocasa
+        else "Cosmos-Policy-LIBERO-Predict2-2B.pt"
+    )
     values = {
-        prefix + "CHECKPOINT": paths["policy"] / "Cosmos-Policy-LIBERO-Predict2-2B.pt"
+        prefix + "CHECKPOINT": paths["policy"] / model_file
         if cosmos
         else paths["policy"]
     }
@@ -413,9 +469,9 @@ def prepare(plan, *, hub=None):
         values.update(
             {
                 prefix + "DATASET_STATS": paths["policy"]
-                / "libero_dataset_statistics.json",
+                / f"{domain}_dataset_statistics.json",
                 prefix + "TEXT_EMBEDDINGS": paths["policy"]
-                / "libero_t5_embeddings.pkl",
+                / f"{domain}_t5_embeddings.pkl",
                 prefix + "VAE_CHECKPOINT": paths["vae"] / "tokenizer/tokenizer.pth",
             }
         )
@@ -424,9 +480,15 @@ def prepare(plan, *, hub=None):
     if source:
         values["ROBOTICS_COSMOS_SOURCE" if cosmos else "ROBOTICS_SIM_SOURCE"] = source
     if plan["python"]:
-        values["ROBOTICS_COSMOS_PYTHON" if cosmos else "ROBOTICS_PI05_PYTHON"] = plan[
-            "python"
-        ]
+        values[prefix + "PYTHON" if cosmos else "ROBOTICS_PI05_PYTHON"] = plan["python"]
+    if robocasa:
+        if plan.get("robocasa_source"):
+            values["ROBOTICS_ROBOCASA_SOURCE"] = plan["robocasa_source"]
+        if source:
+            values["ROBOTICS_ROBOCASA_CONTROLLER_CONFIG"] = (
+                source
+                / "cosmos_policy/experiments/robot/robocasa/robocasa_controller_configs.pkl"
+            )
     if "dataset" in paths:
         values[prefix + "DATASET"] = paths["dataset"]
     if config:
@@ -464,7 +526,12 @@ def main(argv=None):
                 f"Source the generated paths: source {shlex.quote(plan['env_file'])}",
                 file=sys.stderr,
             )
-            if not plan["libero_root"]:
+            if plan["case"] == "cosmos_robocasa":
+                print(
+                    "Kitchen assets and the RoboCasa runtime must be prepared separately; see the case README.",
+                    file=sys.stderr,
+                )
+            elif not plan["libero_root"]:
                 print(
                     "No LIBERO config generated; supply --libero-root or retain your existing case config.",
                     file=sys.stderr,

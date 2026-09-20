@@ -1,6 +1,6 @@
 # Robotics: The Speedup Paradox
 
-面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO](benchmarks/static/pi05_libero/README.md) 和 [Cosmos-Policy＋LIBERO](benchmarks/static/cosmos_libero/README.md) 运行入口。两者使用调用者提供的兼容外部源码与checkpoint，支持同步基线及论文静态抽象 `paper_async`。Cosmos 通过独立 engine、simulator 和单环境 runner 接入，当前支持原精度，已完成固定输入动作对齐及同步、论文异步各一个GPU闭环smoke。
+面向模型推理与机器人实验的基础工具。目前提供CPU数据契约校验、baseline加速比计算、轨迹分析，以及 [π0.5＋LIBERO](benchmarks/static/pi05_libero/README.md)、[Cosmos-Policy＋LIBERO](benchmarks/static/cosmos_libero/README.md) 和 [Cosmos-Policy＋RoboCasa](benchmarks/static/cosmos_robocasa/README.md) 运行入口。各case使用兼容的外部源码与checkpoint，支持同步基线及论文静态抽象 `paper_async`。Cosmos 通过独立 engine、simulator 和单环境 runner 接入；RoboCasa 已完成同初态同步、论文异步各一个GPU闭环smoke。
 
 实验按静态和动态任务分别组织。每个case绑定模型、权重、任务、环境及协议，只在已验证的范围内选择量化或调度方案。
 
@@ -8,10 +8,10 @@
 
 | 实验入口 | 当前规划 |
 | --- | --- |
-| [静态任务](benchmarks/static/README.md) | π0.5＋LIBERO；Cosmos-Policy＋LIBERO已有独立入口；Cosmos/RoboCasa与LingBot-VA仍待接入 |
+| [静态任务](benchmarks/static/README.md) | π0.5＋LIBERO、Cosmos＋LIBERO、Cosmos＋RoboCasa已有独立入口；LingBot-VA仍待接入 |
 | [动态任务](benchmarks/dynamic/README.md) | DynamicVLA＋DOM；[Kinetix](benchmarks/dynamic/kinetix/README.md)保留原生JAX策略、环境与rollout |
 
-两个目录分别组织case。π0.5＋LIBERO已有显式路径配置、CPU预检、权重加载审计与外部评测桥接；Cosmos＋LIBERO新增本仓库控制生命周期、原生模型/环境适配和逐请求历史观测记录，保留基线 `1a4983e` 已有的π0.5功能。两条路径共享事件/指标约定和分析工具，各case维护自己的控制协议、baseline和验证范围。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
+两个目录分别组织case。π0.5＋LIBERO提供显式路径配置、CPU预检、权重加载审计与外部评测桥接；Cosmos的LIBERO和RoboCasa case提供本仓库控制生命周期、原生模型/环境适配和逐请求历史观测记录。RoboCasa另外记录场景初始化，并可核对与baseline的起点是否一致。各case共享指标约定和分析工具，维护自己的控制协议、baseline和验证范围。其他后端按具体任务需求接入，具体方向见 [工作路线](docs/tasks/README.md)。
 
 ## 快速开始
 

@@ -12,6 +12,8 @@
 
 ## 来源记录与发布
 
+[Cosmos＋RoboCasa case](benchmarks/static/cosmos_robocasa/README.md) 调用 [moojink/robocasa-cosmos-policy](https://github.com/moojink/robocasa-cosmos-policy) fork，已验证commit为 `edd9a328b3ec98050f42d194c1419307a79c4d87`；根源码许可证为MIT。任务预算、原生控制器参数和观测/动作约定参考Cosmos官方RoboCasa评测接口，适配器由本仓库实现。外部fork、其下载的厨房资产、controller pickle、checkpoint及训练数据均不随本仓库分发；各资产仍须独立遵守原条款。
+
 后续引入第三方组件时，在对应 PR 记录：上游 URL、完整 commit SHA、实际文件、引入方式（依赖/子模块/vendor/重写）、原文件许可证与版权、修改说明，以及模型权重或数据的单独条款。保留原始许可文件，不能根据根 LICENSE 推断全部嵌套内容的授权。
 
 本项目自有代码的开源许可证尚待维护者确定；当前没有自动选择或添加 LICENSE。对外发布前完成该项并更新 README。本文件只记录来源流程，不代表已审查尚未引入的资产。

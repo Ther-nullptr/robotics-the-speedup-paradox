@@ -1,4 +1,4 @@
-"""Optional Cosmos Policy engine for the fixed LIBERO inference case."""
+"""Optional Cosmos Policy engine for explicitly selected static cases."""
 
 from contextlib import contextmanager
 import gc
@@ -55,7 +55,7 @@ def _checkpoint_registration_context(registry, checkpoint):
 
 
 @contextmanager
-def _libero_import_context(source):
+def _libero_import_context(source, suite="libero"):
     """Bind native LIBERO imports and config registration to the source root.
 
     Native experiment registration checks source-relative checkpoint paths
@@ -65,7 +65,7 @@ def _libero_import_context(source):
     previous_argv = sys.argv
     previous_path = sys.path[:]
     previous_cwd = Path.cwd()
-    sys.argv = ["robotics_bench_libero"]
+    sys.argv = ["robotics_bench_" + suite]
     sys.path.insert(0, str(source))
     try:
         os.chdir(source)
@@ -125,6 +125,12 @@ def _load_text_embeddings(path, descriptions, np):
         cache = _CPUUnpickler(stream).load()
     if not isinstance(cache, dict):
         raise ValueError("text embedding pickle must contain an instruction dictionary")
+    if descriptions is None:
+        descriptions = list(cache)
+    if not descriptions or any(
+        not isinstance(key, str) or not key.strip() for key in descriptions
+    ):
+        raise ValueError("text embeddings require nonempty instruction keys")
     missing = sorted(set(descriptions) - set(cache))
     if missing:
         raise ValueError(f"missing text embeddings for instructions: {missing}")
@@ -182,12 +188,34 @@ class CosmosEngine:
         text_embeddings,
         vae_checkpoint,
         *,
-        config_name="cosmos_predict2_2b_480p_libero__inference_only",
+        config_name=None,
         num_inference_steps=5,
-        action_horizon=16,
+        action_horizon=None,
+        suite="libero",
     ):
-        if type(action_horizon) is not int or action_horizon != 16:
-            raise ValueError("Cosmos LIBERO action_horizon must be 16")
+        cases = {
+            "libero": (16, "cosmos_predict2_2b_480p_libero__inference_only"),
+            "robocasa": (
+                32,
+                "cosmos_predict2_2b_480p_robocasa_50_demos_per_task__inference",
+            ),
+        }
+        if suite not in cases:
+            raise ValueError("Cosmos suite must be libero or robocasa")
+        expected_horizon, default_config = cases[suite]
+        if action_horizon is None:
+            action_horizon = expected_horizon
+        if type(action_horizon) is not int or action_horizon != expected_horizon:
+            raise ValueError(
+                f"Cosmos {suite.upper()} action_horizon must be {expected_horizon}"
+            )
+        config_name = config_name or default_config
+        self.suite = suite
+        self.image_keys = (
+            ("primary_image", "wrist_image")
+            if suite == "libero"
+            else ("primary_image", "secondary_image", "wrist_image")
+        )
         if type(num_inference_steps) is not int or num_inference_steps < 1:
             raise ValueError("num_inference_steps must be a positive integer")
         self.source = Path(source).expanduser().resolve()
@@ -204,9 +232,9 @@ class CosmosEngine:
         self._stats = None
         self._episode_id = None
         self._cfg = SimpleNamespace(
-            suite="libero",
+            suite=suite,
             use_third_person_image=True,
-            num_third_person_images=1,
+            num_third_person_images=len(self.image_keys) - 1,
             use_wrist_image=True,
             num_wrist_images=1,
             use_proprio=True,
@@ -219,6 +247,7 @@ class CosmosEngine:
         )
         self.metadata = {
             "engine": "cosmos_policy",
+            "suite": suite,
             "source": str(self.source),
             "checkpoint": str(self.checkpoint),
             "vae_checkpoint": str(self.vae_checkpoint),
@@ -235,7 +264,7 @@ class CosmosEngine:
             "quantization": "none",
         }
 
-    def load(self, task_descriptions: list[str], audit_path: Path):
+    def load(self, task_descriptions: list[str] | None, audit_path: Path):
         if self._model is not None:
             raise RuntimeError("CosmosEngine is already loaded")
         audit_path = Path(audit_path).expanduser().resolve()
@@ -246,9 +275,14 @@ class CosmosEngine:
                 raise RuntimeError(
                     "COSMOS_SMOKE disables checkpoint loading and is rejected"
                 )
-            if not task_descriptions or any(
-                not isinstance(task, str) or not task.strip()
-                for task in task_descriptions
+            if task_descriptions is None and self.suite != "robocasa":
+                raise ValueError("task_descriptions are required for LIBERO")
+            if task_descriptions is not None and (
+                not task_descriptions
+                or any(
+                    not isinstance(task, str) or not task.strip()
+                    for task in task_descriptions
+                )
             ):
                 raise ValueError(
                     "task_descriptions must contain nonempty natural-language instructions"
@@ -263,18 +297,18 @@ class CosmosEngine:
                 if not path.is_file():
                     raise FileNotFoundError(path)
             if self.checkpoint.suffix != ".pt":
-                raise ValueError("Cosmos LIBERO requires a local .pt checkpoint")
-            with _libero_import_context(self.source):
+                raise ValueError("Cosmos requires a local .pt checkpoint")
+            with _libero_import_context(self.source, self.suite):
                 backend = _import_native(self.source)
                 constants = backend.constants
                 if (
-                    constants.ROBOT_PLATFORM != "LIBERO"
-                    or constants.NUM_ACTIONS_CHUNK != 16
+                    constants.ROBOT_PLATFORM != self.suite.upper()
+                    or constants.NUM_ACTIONS_CHUNK != self.action_horizon
                     or constants.ACTION_DIM != 7
                     or constants.PROPRIO_DIM != 9
                 ):
                     raise RuntimeError(
-                        "loaded Cosmos constants do not match LIBERO 16/7/9"
+                        f"loaded Cosmos constants do not match {self.suite.upper()} {self.action_horizon}/7/9; use a separate process per case"
                     )
                 if backend.loader.SMOKE:
                     raise RuntimeError(
@@ -283,6 +317,10 @@ class CosmosEngine:
                 embeddings = _load_text_embeddings(
                     self.text_embeddings, task_descriptions, backend.np
                 )
+                if task_descriptions is None:
+                    self.metadata["text_embedding_scope"] = (
+                        "all_cached_instructions_cpu_numpy"
+                    )
                 stats = _load_statistics(self.dataset_stats, backend.np)
                 if not backend.torch.cuda.is_available():
                     raise RuntimeError(
@@ -334,7 +372,7 @@ class CosmosEngine:
                         or resolved_chunk_size != self.action_horizon
                     ):
                         raise RuntimeError(
-                            "resolved dataloader_train.dataset.chunk_size must be 16"
+                            f"resolved dataloader_train.dataset.chunk_size must be {self.action_horizon}"
                         )
                 model.eval()
                 model = model.to(backend.utils.DEVICE)
@@ -378,7 +416,7 @@ class CosmosEngine:
             raise ValueError("sampling_seed must be a nonnegative integer")
         np = self._backend.np
         native_observation = {}
-        for name in ("primary_image", "wrist_image"):
+        for name in self.image_keys:
             value = observation[name]
             if (
                 not isinstance(value, np.ndarray)
@@ -395,7 +433,7 @@ class CosmosEngine:
             or proprio.dtype.kind not in "fiu"
             or not np.isfinite(proprio).all()
         ):
-            raise ValueError("proprio must contain nine finite native LIBERO values")
+            raise ValueError("proprio must contain nine finite native values")
         native_observation["proprio"] = proprio.copy()
         result = self._backend.utils.get_action(
             self._cfg,
@@ -420,7 +458,7 @@ class CosmosEngine:
             or not np.isfinite(actions).all()
         ):
             raise ValueError(
-                "Cosmos actions must be a finite floating-point (16, 7) CPU array"
+                f"Cosmos actions must be a finite floating-point ({self.action_horizon}, 7) CPU array"
             )
         self.metadata["action_dtype"] = str(actions.dtype)
         return actions

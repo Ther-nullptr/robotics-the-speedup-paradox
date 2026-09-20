@@ -1,15 +1,15 @@
 # 静态任务实验入口
 
-本目录组织静态任务的case、运行入口和实验配置。[π0.5＋LIBERO](pi05_libero/README.md) 已有原精度同步评估及论文静态抽象 `paper_async` 入口；[Cosmos-Policy＋LIBERO](cosmos_libero/README.md) 已有独立 engine/simulator/单环境 runner，完成固定输入动作对齐及同步、论文异步各一个GPU闭环smoke。具体实验设置与验证范围分别见case说明。
+本目录组织静态任务的case、运行入口和实验配置。[π0.5＋LIBERO](pi05_libero/README.md) 已有原精度同步评估及论文静态抽象 `paper_async` 入口；Cosmos的 [LIBERO](cosmos_libero/README.md) 和 [RoboCasa](cosmos_robocasa/README.md) case通过独立engine/simulator及单环境runner执行。具体实验设置与验证范围分别见case说明。
 
 | case入口 | 绑定范围 | 当前状态与接入边界 |
 | --- | --- | --- |
-| [pi05_libero](pi05_libero/README.md) | 原生 LeRobot π0.5＋LIBERO任务 | 同步单episode仅为smoke，不作任务集SR；`paper_async` 使用历史观测与论文周期模型。使用任务匹配权重及同源processor，不使用VLASH微调权重 |
+| [pi05_libero](pi05_libero/README.md) | 原生 LeRobot π0.5＋LIBERO任务 | 已完成object同步及论文异步各500回合；使用任务匹配权重及同源processor，不使用VLASH微调权重 |
 | [cosmos_libero](cosmos_libero/README.md) | Cosmos-Policy＋LIBERO spatial/object/goal/10 | 独立入口；原精度、H=16、n默认16；object单任务sync/paper_async GPU smoke通过，其余任务闭环待验证 |
-| `cosmos_robocasa/` | Cosmos-Policy＋其适配的RoboCasa任务 | 对应checkpoint、环境fork/资产版本、控制器和预后处理 |
+| [cosmos_robocasa](cosmos_robocasa/README.md) | RoboCasa专用Cosmos checkpoint＋指定fork和控制器 | 原精度、H=32、n默认16；TurnOffMicrowave固定场景sync/paper_async GPU smoke通过，其余任务待验证 |
 | `lingbot_va/` | LingBot-VA静态任务 | 任务/模拟器/checkpoint组合待明确；cache与历史状态独立定义 |
 
-Cosmos/RoboCasa和LingBot-VA仍为planned。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
+LingBot-VA仍为planned。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
 
 ## 文件归属
 

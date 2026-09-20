@@ -48,6 +48,7 @@ def test_optional_datasets_and_root_override(api, tmp_path, monkeypatch):
     for case, repo in [
         ("pi05_libero", "lerobot/libero"),
         ("cosmos_libero", "nvidia/LIBERO-Cosmos-Policy"),
+        ("cosmos_robocasa", "nvidia/RoboCasa-Cosmos-Policy"),
     ]:
         args = api.build_parser().parse_args(["--case", case, "--with-dataset"])
         plan = api.build_plan(args)

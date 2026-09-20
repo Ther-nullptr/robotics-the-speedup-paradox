@@ -503,6 +503,41 @@ def test_registration_binds_only_unused_base_reference_and_restores(tmp_path, fa
     assert registry.get_checkpoint_path is original
 
 
+def test_robocasa_uses_three_views_and_32_actions(native_boundary):
+    b = native_boundary
+    old = b.engine
+    b.engine = b.module.CosmosEngine(
+        old.source,
+        old.checkpoint,
+        old.dataset_stats,
+        old.text_embeddings,
+        old.vae_checkpoint,
+        suite="robocasa",
+        action_horizon=32,
+    )
+    b.backend.constants.ROBOT_PLATFORM = "ROBOCASA"
+    b.backend.constants.NUM_ACTIONS_CHUNK = 32
+    b.resolved_config.dataloader_train.dataset.chunk_size = 32
+    captured = {}
+
+    def action(cfg, model, stats, obs, embedding, **kwargs):
+        captured.update(cfg=cfg, obs=obs)
+        return {"actions": b.np.zeros((32, 7), dtype=b.np.float64)}
+
+    b.backend.utils.get_action = action
+    b.engine.load(None, b.audit)
+    b.engine.reset(("TurnOffMicrowave", 0, 0))
+    obs = observation(b.np)
+    obs["secondary_image"] = obs["primary_image"].copy()
+    result = b.engine.infer_chunk(obs, "pick up cup", 195)
+    assert result.shape == (32, 7)
+    assert captured["cfg"].suite == "robocasa"
+    assert captured["cfg"].num_third_person_images == 2
+    assert b.np.array_equal(
+        captured["obs"]["secondary_image"], obs["secondary_image"][::-1]
+    )
+
+
 def test_infer_flips_once_preserves_dtype_and_native_preprocessing(native_boundary):
     b = native_boundary
     engine = load_engine(b)
