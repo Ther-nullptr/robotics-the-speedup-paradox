@@ -6,6 +6,8 @@
 
 ## 环境和资源
 
+CPU工具与各case环境的安装边界、版本表和故障排查见 [环境指南](../../../docs/environment_setup.md)。
+
 使用 [Cosmos 官方说明](https://github.com/NVlabs/cosmos-policy/blob/main/ROBOCASA.md) 指定的 [robocasa-cosmos-policy fork](https://github.com/moojink/robocasa-cosmos-policy)。已验证源码为 [edd9a328b3ec98050f42d194c1419307a79c4d87](https://github.com/moojink/robocasa-cosmos-policy/commit/edd9a328b3ec98050f42d194c1419307a79c4d87)，配合 robosuite 1.5.1、MuJoCo 3.2.6、Python 3.10 和 PyTorch 2.7.0+cu128。环境与 LIBERO 所需 robosuite 1.4.0 分开配置；一个 Python 进程只加载一种 Cosmos case，避免原生全局平台常量串用。
 
 所需文件：RoboCasa 专用 Policy `.pt`、`robocasa_dataset_statistics.json`、`robocasa_t5_embeddings.pkl`、配套 VAE，以及 Cosmos 源码内的 `robocasa_controller_configs.pkl`。提供完整路径模板 [paths.env.example](paths.env.example)，也可以用资源工具下载或复用已有文件：

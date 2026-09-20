@@ -6,6 +6,8 @@
 
 ## 配置路径与运行环境
 
+通用安装层次、已验证依赖组合和故障排查见 [环境指南](../../../docs/environment_setup.md)。
+
 从仓库根目录复制 [路径模板](paths.env.example)，填入已有资源后显式加载：
 
 ```bash
@@ -132,7 +134,7 @@ manifest 使用独立 `cosmos-libero-run-v1` 格式，`requests.jsonl` 是本 ca
 
 已完成586项CPU测试及RTX 6000 Ada上的以下GPU检查：固定 `sample_libero_10_observation.pkl`、seed195时，新引擎与原生动作接口输出完全相等（16×7、float64、最大绝对误差0）；LIBERO-object任务0、初态0、环境seed0、H=n=16、5步采样下，同步episode在137个控制步成功，`paper_async n′=2` 在154步成功。两次加载与覆盖审计通过；异步请求记录确认首轮使用当前观测，后续回看2个原始控制步；录像为256×256、30 FPS、155帧，含初始和终止画面。
 
-这些是固定输入对齐和单episode闭环连通性证据，不是完整任务集成功率或性能结论。未采集可比较的推理profile，因此不报告论文加速比。量化、RoboCasa以及其他任务的闭环尚未验证。
+这些是固定输入对齐和单episode闭环连通性证据，不是完整任务集成功率或性能结论。未采集可比较的推理profile，因此不报告论文加速比。全模型量化及其他LIBERO任务的闭环尚未验证；RoboCasa的独立验证范围见 [对应case](../cosmos_robocasa/README.md)。
 
 Cosmos 接入在基线 `1a4983e` 之后扩展，保留该基线已有的 π0.5 功能及其独立入口。模型实现依然来自调用者指定的外部源码。当前本机检查使用的 Cosmos 源码副本没有 `.git`，不能标为某个纯上游 commit：计划记录 Python 源码树 SHA-256 与 `git_available=false`，有可用 Git 信息时才记录真实 commit/dirty 身份。资源文件、本仓执行代码和选项共同进入 case 指纹。
 

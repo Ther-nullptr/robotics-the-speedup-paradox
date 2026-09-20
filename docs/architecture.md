@@ -1,82 +1,122 @@
-# 模块与复用边界
+# 代码架构与执行流程
 
-[架构图源码与生成说明](diagrams/README.md) 覆盖总体模块、异步时序、推理内部路径和双仓 PR 流程；SVG/HTML 在本地按需生成。
+[项目首页](../README.md) · [环境配置](environment_setup.md) · [协作流程](../CONTRIBUTING.md)
 
-当前已有CPU契约/分析工具、开发协议和静态/动态任务入口。π0.5＋LIBERO提供基于外部兼容源码的试跑桥接与加载审计；下面的自有runtime和adapter路径仍是后续模块边界，按实际接入逐步创建。
+本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。动态任务、通用模型服务和完整量化backend仍属于后续方向。
 
-先在同一仓库维护公共核心与机器人调用方，避免新成员同时协调多个仓库。后续其他项目通过固定版本/SHA 依赖公共核心；第二个真实调用方出现后再决定是否独立拆包。
+## 1. 以case组织实验
 
-## 静态与动态任务分开组织
+每个case明确绑定模型、checkpoint、预处理、任务、模拟器版本和控制协议。静态与动态任务分开维护，模型与模拟器不展开笛卡尔积。Cosmos两个case复用引擎代码，但分别使用自己的权重、统计量、输入相机、动作块长度和运行环境。
 
-实验入口是明确的 case：绑定模型、checkpoint、预后处理、任务、模拟器版本和执行协议，再选择该 case 支持的优化方案。模型与模拟器不自动生成笛卡尔积；接口形状兼容不足以证明权重、控制语义或任务能力兼容。
+| case | 模型调用 | 环境与执行 | 状态 |
+| --- | --- | --- | --- |
+| `pi05_libero` | 兼容外部LeRobot/VLASH evaluator | 本仓桥接、初态适配、加载/覆盖审计 | 可运行；object同步与论文异步各500回合已验证 |
+| `cosmos_libero` | 本仓 `CosmosEngine(suite="libero")` | 原生LIBERO adapter＋共享静态runner | 可运行；固定输入对齐和单回合GPU验证 |
+| `cosmos_robocasa` | 本仓 `CosmosEngine(suite="robocasa")` | 原生RoboCasa adapter＋共享静态runner | 可运行；固定场景同步/异步GPU验证 |
+| DynamicVLA＋DOM、Kinetix、LingBot-VA | 待接入 | 各自保留任务与执行协议 | 规划中 |
 
-| 实验路径 | 当前规划范围 | 路径内固定的内容 |
-| --- | --- | --- |
-| [静态任务入口](../benchmarks/static/README.md) | π0.5＋LIBERO；Cosmos-Policy＋LIBERO或其适配的RoboCasa任务；LingBot-VA的任务组合待确认 | 各case的任务匹配权重、观测/action处理、控制循环和baseline |
-| [动态任务入口](../benchmarks/dynamic/README.md) | DynamicVLA＋DOM；[Kinetix原生JAX策略与环境](../benchmarks/dynamic/kinetix/README.md) | 各case独立的policy/控制循环、时延与世界推进、动作有效期、成功判据和baseline |
+## 2. 当前模块关系
 
-除 [π0.5＋LIBERO试跑桥接](../benchmarks/static/pi05_libero/README.md) 外，以上case仍为接入规划。分类依据是具体任务及实验假设，不把某个模拟器永久归为静态或动态。静态任务也可比较同步/异步，动态任务也需要同步baseline；任务类型、调度方式和推理等待期间是否推进世界分别声明。固定输入的模型计时是独立验证环节，不代替任一路径的闭环实验。
-
-两条路径共享事件记录、指标定义与能力约定，推理executor和backend/量化机制按执行能力复用，各case拥有控制循环与协议实现。DOM的时钟驱动和过期动作规则按动态case接入，静态任务不必依赖这些组件。同模型跨case复用经过验证的Engine，但不自动共享checkpoint、processor、历史状态或benchmark结果。
-
-动态路径内DOM与Kinetix也分开：DOM保留模型服务和Isaac时钟驱动；Kinetix保留原生JAX/Flax策略、PyTree状态、PRNG、可选recurrent carry及编译rollout。Kinetix不需要机械臂观测、文本条件或动作块，也不强制经过进程Executor。公共接口不能把VLA或Torch的实现细节变成所有case的前提。
-
-任务专用启动代码和配置分别归属两个benchmark目录；VLA控制实现按需放 `src/robotics_bench/protocols/static/`、`dynamic/`。模型/环境adapter按其自身边界管理；Kinetix首次实现先在自己的case目录保留原生policy/env/rollout组合。固定输入的kernel/policy测量作为共享验证环节，按实际需求抽取代码，避免复制底层工具。
-
-```text
-src/streaming_infra/        通用 contracts、runtime、backend、quantization、trace
-src/robotics_bench/         policies、simulators、protocols、experiments、visualization
-csrc/                      已实际接入的 C++ / CUDA 算子
-schemas/                   manifest 与事件格式
-examples/                  当前契约样例，之后增加 CPU 调度样例
-tests/                     当前校验测试，之后增加 runtime/backend/integration
-benchmarks/static/         π0.5＋LIBERO试跑入口与配置；其他静态case随接入增加
-benchmarks/dynamic/        已有case入口说明；动态任务运行代码/配置随接入增加
-  kinetix/                 已有原生JAX接入边界；策略、环境与rollout仍待实现
-docs/tasks/README.md       长期工作方向；具体任务与交接放在 Issue / PR
-docs/templates/            可复制到 Issue / PR 的任务与交接模板
-```
-
-## 单向依赖
+实线表示运行调用或结果传递；虚线表示预先准备的配置输入。
 
 ```mermaid
 flowchart LR
-    accTitle: Static and Dynamic Experiment Boundaries
-    accDescr: Static cases, DOM cases and native JAX Kinetix cases keep separate execution loops. All share event and metric contracts; executor reuse is optional for compatible runtimes.
-    static_case["静态 case<br/>绑定模型、权重、任务与环境"] --> static_runner["静态任务 Runner"]
-    subgraph dynamic_track["动态任务"]
-        dom_runner["DOM case<br/>模型服务 / Isaac ClockDriver"]
-        kinetix_runner["Kinetix case<br/>原生策略 / JAX rollout"]
-    end
-    static_runner --> contracts["共享事件 / 能力 / 指标约定"]
-    dom_runner --> contracts
-    kinetix_runner --> contracts
-    static_runner -.按能力复用.-> executor["Executor / backend"]
-    dom_runner -.按能力复用.-> executor
-    contracts --> viewer["按 case 比较指标与可视化"]
+    accTitle: Implemented Static Case Architecture
+    accDescr: Explicit resource preparation supplies three case launchers. Pi05 uses an external evaluator bridge. Cosmos cases use the shared static runner with separate engine and simulator adapters. Both paths produce artifacts for CPU analysis.
+    resources["Resource preparation"] -. "local paths" .-> case_cli["Static case CLI and preflight"]
+    case_cli -->|pi05| evaluator["External evaluator bridge"]
+    case_cli -->|Cosmos| runner["Static runner"]
+    runner --> engine["Cosmos engine"]
+    runner --> simulator["LIBERO or RoboCasa adapter"]
+    engine --> model_source["External Cosmos source"]
+    simulator --> native_env["Native simulator"]
+    evaluator --> artifacts["Run artifacts"]
+    runner --> artifacts
+    artifacts --> analysis["CPU summaries and metrics"]
 ```
 
-公共核心不得 import `robotics_bench` 或模拟器，也不得依赖任何兄弟目录。顶层 import 不加载 GPU/模型/模拟器。未来初版可用一个 distribution 提供两个 namespace，模型/GPU/模拟器放可选依赖，待真实需求推动拆包。
+资源下载在实验前独立执行。模型checkpoint、库和模拟器代码来自显式提供的外部资源，CPU工具顶层不导入Torch或模拟器。π0.5目前保留外部evaluator执行闭环；它没有改成Cosmos的engine/runner实现。
 
-需要修改第三方模拟器内部源码时，采用独立 fork 与固定提交依赖，主仓保留 adapter、调度和实验配置。引入方式、版本与跨仓 PR 见 [模拟器依赖协议](protocols/simulator-dependencies.md)。
+## 3. 文件职责与阅读顺序
 
-## 责任划分
+| 文件或目录 | 职责 |
+| --- | --- |
+| [资源工具](../tools/prepare_resources.py) | 下载计划、本地复用、版本和文件检查、生成env配置 |
+| [π0.5入口](../benchmarks/static/pi05_libero/run.py) | 参数解析、AST/文件预检、来源记录、调用外部evaluator |
+| [π0.5环境适配](../benchmarks/static/pi05_libero/libero_adapter.py) | 指定初态、reset顺序和终止后的行为 |
+| [π0.5评估审计](../benchmarks/static/pi05_libero/evaluation_audit.py) | 读取真实任务/初态ID，记录和核对episode覆盖 |
+| [Cosmos LIBERO入口](../benchmarks/static/cosmos_libero/run.py) / [配置](../benchmarks/static/cosmos_libero/config.py) | 单环境运行生命周期、任务分配、CPU预检及报告 |
+| [Cosmos RoboCasa入口](../benchmarks/static/cosmos_robocasa/run.py) / [配置](../benchmarks/static/cosmos_robocasa/config.py) | 固定任务/场景清单、初始化保存和reference比对 |
+| [Cosmos引擎](../src/robotics_bench/engines/cosmos.py) | 原生模型加载、统计量和T5、图像预处理、动作块推理 |
+| [Cosmos加载审计](../src/robotics_bench/engines/cosmos_load_guard.py) | 检查实际权重加载覆盖；限定允许的元数据兼容项 |
+| [LIBERO adapter](../src/robotics_bench/simulators/libero.py) | 任务初态、环境reset/step、成功与渲染 |
+| [RoboCasa adapter](../src/robotics_bench/simulators/robocasa.py) | 场景初始化、动态语言、三相机、控制器动作映射 |
+| [静态runner](../src/robotics_bench/protocols/static_runner.py) | 历史快照、请求触发、执行动作前缀、计数与终止 |
+| [视频记录器](../benchmarks/static/pi05_libero/video_recorder.py) | 三个case复用的完整episode录像和元数据 |
+| [统计核心](../tools/episode_statistics.py) / [汇总入口](../tools/summarize_experiment.py) | 失败预算、仅成功统计、任务加权、结果输出 |
+| [加速比工具](../tools/compare_speedups.py) / [轨迹工具](../tools/embodied/README.md) | 声明时间域下的baseline比较、轨迹及导数指标 |
 
-| 模块 | 对外约定 | 不能隐式承担 |
-| --- | --- | --- |
-| PolicyAdapter | 输入/输出与状态约定；VLA按动作块，Kinetix按原生动作分布/carry；明确就绪及reset | env.step、延迟注入、私自覆盖新旧动作队列 |
-| SimulatorAdapter | observe、step、reset、terminal、render、clock/tick | 调模型、等推理、决定未来动作何时可用 |
-| ProtocolRunner / native rollout | 按case选择控制实现；采样、触发、释放、队列、过期与终止 | 模型 mask/normalization/cache 细节；强制所有后端使用host循环 |
-| Backend | capability、prepare、dispatch、输出生命周期、fallback 原因 | 无记录地改精度或宣称不支持形状已加速 |
-| Trace/metrics | ID 关联、时间域、记录、失败预算和聚合 | 改变环境步进或控制命令 |
-| Viewer | 从 trace 还原状态、时间轴、观测年龄和欠载 | 从渲染 FPS 猜控制频率；阻塞推理/控制主循环 |
+建议先读选定case的README与配置，再看入口、engine/simulator，最后读runner和统计工具。RoboCasa入口目前复用Cosmos LIBERO入口中的日志与汇总辅助函数；这属于已存在的代码依赖，还没有独立抽成通用runtime包。
 
-观测输入保持不可变直到请求真正完成。可复用 buffer 必须有 ownership 与 lifetime；terminal 立即结束逻辑 episode，在途计算 drain 后再释放资源。不同模型的 KV、prompt、denoise、RoPE 与 action normalization 留在 adapter，先用实际实现证明共性再抽象。
+## 4. Cosmos的episode生命周期
 
-## 三类变更分开提交
+```mermaid
+sequenceDiagram
+    accTitle: Cosmos Episode Control Lifecycle
+    accDescr: A case loads its model once, resets the selected environment, obtains the current language instruction, selects history observations for inference and steps action prefixes until success or budget exhaustion.
+    participant case_run as Case entry
+    participant runner as Static runner
+    participant simulator as Simulator adapter
+    participant engine as Cosmos engine
+    case_run->>engine: load checkpoint, statistics and text cache
+    case_run->>runner: run_episode with case settings
+    runner->>simulator: reset with initial state or scene seed
+    simulator-->>runner: current observation and episode language
+    runner->>engine: reset episode identity
+    loop Until success, termination or step budget
+        runner->>runner: store the current observation snapshot
+        opt Action queue is empty
+            runner->>runner: select current or t minus n-prime snapshot
+            runner->>engine: infer_chunk with observation and language
+            engine-->>runner: H actions
+            runner->>runner: enqueue the first n actions
+        end
+        runner->>simulator: step one action
+        simulator-->>runner: observation, success and terminal state
+        runner->>runner: increment completed control-step count
+    end
+    runner-->>case_run: episode result and step count
+    case_run->>case_run: save coverage, video and summary
+```
 
-接口/协议变化先给可观察例子与 schema 兼容说明；基础模型接入先给固定输入动作对齐；性能优化再给实际 kernel、数值与端到端证据。允许它们形成一串依赖 PR，避免一次修改既改变控制协议又换精度，使结果无法归因。
+- LIBERO使用任务内的指定初态；RoboCasa按任务、layout/style和环境种子创建场景。两者的settling都在策略控制计数之外。
+- RoboCasa在reset后读取本回合语言，不能提前把任务名当成固定指令。模型缓存保留在CPU，当前指令必须有对应T5 embedding。
+- `H` 是模型输出长度，`n` 是每次实际执行的前缀长度：LIBERO为H=16、默认n=16，RoboCasa为H=32、默认n=16。
+- checkpoint加载不完整、初始化比对失败或环境异常会使运行报错，不伪装成任务失败episode。
 
-优化的目标是满足质量门槛时降低完整 inference/任务代价。GEMM 占比、kernel 数、copy 数用来诊断瓶颈。加载期 pack/concat、shared quant、norm/activation/epilogue 融合、workspace/cache 优化都由 profile 选择，不要求每个模型套用相同路线。
+模型实例的权重和文本缓存跨episode保留；runner的动作队列与观测历史在每次episode重建。模拟器负责成功与终止，runner负责计数及调度。第三方模型的预处理、采样与动作归一化保留在engine边界内。
 
-模型未来分别报告 `reference` 和优化 backend，原始与新协议也分别命名。没有实测的配置明确标注未验证，不把支持列表当作性能结果。
+## 5. 论文异步与时间口径
+
+`paper_async` 在控制步t选择t−n′的历史观测；三相机/双相机与proprio同时延迟，历史不足使用当前观测。它改变模型看到的快照，当前实现没有后台推理线程，也不按墙钟推理耗时额外推进环境。
+
+[论文异步契约](../benchmarks/static/pi05_libero/paper_async.py) 与 [加速比口径](protocols/speedup-metrics.md) 定义周期估计。`Tinf` 必须来自相同模型/配置的推理测量；宿主评估耗时和episode步数不能替代它。仿真控制步长、视频播放FPS、声明的动作时间分别记录。
+
+同步和异步都可输出动作步数及成功率。总体步数统计对失败使用显式预算惩罚，成功仅统计自身动作数；仅成功均值以成功episode数为分母。口径见 [统计定义](protocols/speedup-metrics.md#8-控制步数统计与实验汇总)。
+
+## 6. 配置、结果与契约的边界
+
+`run.sh` 选择case解释器；CLI解析资源与实验参数，`--dry-run` 只做CPU预检；真实运行后写出manifest、加载审计、episode记录和汇总。RoboCasa还保存初始物理状态、场景XML及观测指纹，`--reference-run` 用于核对对照起点。
+
+[schemas](../schemas/README.md) 定义通用manifest/trace契约。当前case使用自己的运行manifest格式及episode/request记录，不能直接把这些文件称为通用v1逐动作trace；格式边界见 [产物协议](protocols/artifacts.md)。同一统计工具可以消费多个case的episode ledger。
+
+[环境指南](environment_setup.md) 说明资源与输出位置。日志、视频、checkpoint、下载缓存、个人研究资料都不进入Git；公共文档不依赖某台机器的绝对路径。
+
+## 7. 后续扩展位置
+
+- 新模型或完整量化实现接入engine边界，并在匹配的case中验证动作质量、真实backend和完整推理代价。
+- 新模拟器实现reset/step、观测、成功、渲染和控制时间；必要的模拟器内部改动放独立fork，并固定来源版本。
+- 动态DOM和Kinetix保留各自控制协议。Kinetix采用原生JAX状态、PRNG和rollout，不要求经过Torch或VLA动作块接口。
+- 只有真实调用方需要时才抽取通用backend、服务/RPC或独立包；当前不存在 `src/streaming_infra/` 或内置CUDA算子库。
+
+代码与协议变更遵循 [贡献流程](../CONTRIBUTING.md)。更多图稿见 [架构图目录](diagrams/README.md)，其中后续设计均单独标明状态。
