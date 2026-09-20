@@ -33,11 +33,11 @@
 从仓库根目录运行与变更有关的命令，提交前执行 CPU 检查：
 
 ```bash
-python -m ruff check tools tests benchmarks
-python -m ruff format --check tools tests benchmarks
+python -m ruff check tools tests benchmarks src
+python -m ruff format --check tools tests benchmarks src
 python tools/validate_contracts.py --examples
 python -m pytest -q
-python -m compileall -q tools benchmarks
+python -m compileall -q tools benchmarks src
 ```
 
 开发依赖安装命令见 `CONTRIBUTING.md`。`compileall` 是语法检查，不是 formatter。报告实际运行的命令、结果及未验证条件；schema 校验通过不能证明实时性、数值精度或任务成功率。

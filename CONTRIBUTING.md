@@ -19,11 +19,11 @@ Issue/PR注明 `static/<case>`、`dynamic/<case>` 或 `shared`。前两类分别
 代码变更运行相应检查：
 
 ```bash
-python -m ruff check tools tests benchmarks
-python -m ruff format --check tools tests benchmarks
+python -m ruff check tools tests benchmarks src
+python -m ruff format --check tools tests benchmarks src
 python tools/validate_contracts.py --examples
 python -m pytest -q
-python -m compileall -q tools benchmarks
+python -m compileall -q tools benchmarks src
 ```
 
 绘图测试需要可选Matplotlib依赖，未安装时跳过这部分，数值核心测试仍运行。纯文档修改核对链接与 `git diff --check`；不为拼写修改新增测试或运行GPU实验。图册脚本修改还需实际重建并检查输出。
