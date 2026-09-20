@@ -331,49 +331,11 @@ def test_environment_paths_work_and_explicit_path_wins(inputs, monkeypatch):
     assert not inputs["output_dir"].exists()
 
 
-def test_quant_preset_composes_with_paper_async_without_user_json(inputs, monkeypatch):
-    root = inputs["config"].parent
-    inputs.pop("config")
-    quant_source = root / "quant"
-    (quant_source / "vlash/quantization").mkdir(parents=True)
-    (quant_source / "vlash/quantization/runtime_apply.py").write_text("# fixture\n")
-    kernel_source = root / "kernel"
-    (kernel_source / "eval").mkdir(parents=True)
-    (kernel_source / "eval/quant_linear.py").write_text("# fixture\n")
-    monkeypatch.setenv("ROBOTICS_QUANT_SOURCE", str(quant_source))
-    monkeypatch.setenv("ROBOTICS_KERNEL_SOURCE", str(kernel_source))
-    result = invoke(
-        inputs,
-        "--quant",
-        "w8a8-single-layer",
-        "--schedule",
-        "paper_async",
-        "--overlap-actions",
-        "2",
-        "--dry-run",
-    )
-    assert result.returncode == 0, result.stderr
-    plan = json.loads(result.stdout)
-    assert plan["schedule"] == "paper_async"
-    assert plan["identity"]["case"]["quant_selected_profile"] == "smoke_txt_b00_down"
-    assert "--eval.quant_ladder=fp16_to_w8a8" in plan["upstream_arguments"]
-    assert "--eval.async_delay=2" in plan["upstream_arguments"]
-    assert plan["identity"]["quant_profile"] is not None
+def test_removed_quant_preset_is_rejected_by_cli(inputs):
+    result = invoke(inputs, "--quant", "w8a8-single-layer", "--dry-run")
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr
     assert not inputs["output_dir"].exists()
-    legacy = invoke(
-        inputs,
-        "--config",
-        str(ENTRY.with_name("w8a8-single-layer.case.json")),
-        "--quant-profile",
-        str(ENTRY.with_name("quant-profiles.json")),
-        "--schedule",
-        "paper_async",
-        "--overlap-actions",
-        "2",
-        "--dry-run",
-    )
-    assert legacy.returncode == 0, legacy.stderr
-    assert plan["case_fingerprint"] == json.loads(legacy.stdout)["case_fingerprint"]
 
 
 def test_cli_rejects_sync_with_positive_overlap(inputs):
@@ -393,11 +355,11 @@ def test_cli_can_restore_sync_after_legacy_async_json(inputs):
     assert "--eval.async_delay=0" in plan["upstream_arguments"]
 
 
-def test_quant_preset_rejects_an_ambiguous_profile_override(inputs):
+def test_quant_none_rejects_an_ambiguous_profile_override(inputs):
     result = invoke(
         inputs,
         "--quant",
-        "w8a8-single-layer",
+        "none",
         "--quant-selected-profile",
         "custom",
         "--dry-run",

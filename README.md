@@ -29,7 +29,7 @@ python -m pytest -q
 
 也可以用 `uv venv --python 3.11 .venv` 创建环境，再运行 `uv pip install -r requirements-dev.txt`。上述工具不加载模型或使用GPU；示例是synthetic数据。绘图额外安装 `tools/embodied/requirements-plot.txt`，详见 [轨迹工具说明](tools/embodied/README.md)。
 
-π0.5＋LIBERO实验可直接使用命令行：先按 [case说明](benchmarks/static/pi05_libero/README.md) 配好本机路径，再运行 `bash benchmarks/static/pi05_libero/run.sh --schedule paper_async --overlap-actions 2 --quant none --gpu 3 --output-dir runs/static/pi05_libero/trial-001`。`--quant w8a8-single-layer` 自动选择单层量化预设；常用设置无需手写JSON，manifest与结果文件由入口生成。
+π0.5＋LIBERO实验可直接使用命令行：先按 [case说明](benchmarks/static/pi05_libero/README.md) 配好本机路径，再运行 `bash benchmarks/static/pi05_libero/run.sh --schedule paper_async --overlap-actions 2 --quant none --gpu 3 --output-dir runs/static/pi05_libero/trial-001`。当前提供原精度同步和论文异步实验，没有内置量化模型预设；常用设置无需手写JSON，manifest与结果文件由入口生成。
 
 Cosmos＋LIBERO先按 [case说明](benchmarks/static/cosmos_libero/README.md) 配好外部资源和 `ROBOTICS_COSMOS_PYTHON`，再用 `bash benchmarks/static/cosmos_libero/run.sh --task-ids 0 --episodes 1 --quant none --output-dir runs/static/cosmos_libero/trial-001 --dry-run` 做CPU预检。实际运行去掉 `--dry-run` 并显式传 `--gpu`；日志、episode/请求记录和汇总由入口自动保存。现有环境复用不等于完整新机安装，checkpoint和运行依赖不包含在上述CPU开发依赖中。
 

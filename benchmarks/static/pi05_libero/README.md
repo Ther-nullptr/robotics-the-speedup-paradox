@@ -1,6 +1,6 @@
 # π0.5＋LIBERO 静态 case
 
-使用 [run.sh](run.sh) 直接从命令行选择同步、论文异步和单层量化，不需要手写JSON。它通过 [run.py](run.py) 调用用户提供的兼容VLASH sim evaluator，使用原生LeRobot π0.5及同源processors；不使用VLASH微调checkpoint，也不做预测状态替换。
+使用 [run.sh](run.sh) 直接从命令行选择原精度同步或论文异步实验，不需要手写JSON。它通过 [run.py](run.py) 调用用户提供的兼容VLASH sim evaluator，使用原生LeRobot π0.5及同源processors；不使用VLASH微调checkpoint，也不做预测状态替换。当前没有内置量化模型预设。
 
 ## 配置一次本机路径
 
@@ -29,9 +29,9 @@ source .local/pi05-libero.env
 
 本地env文件不进入Git，脚本也不会自动加载它。路径仍可用 `--sim-source`、`--checkpoint`、`--tokenizer`、`--libero-config-dir`、`--quant-source`、`--kernel-source` 覆盖环境变量。也可直接使用 `python benchmarks/static/pi05_libero/run.py`，选择具备依赖的Python即可；`ROBOTICS_PI05_PYTHON`用于shell入口选择解释器。
 
-## 四种运行方式
+## 两种运行方式
 
-下面使用GPU 3；按本机情况替换索引或填写完整GPU UUID。第一条带 `--dry-run` 预览，实际执行基线时去掉该选项；其余三条直接运行。每次实际执行都使用新的输出目录。
+下面使用GPU 3；按本机情况替换索引或填写完整GPU UUID。第一条带 `--dry-run` 预览，实际执行基线时去掉该选项；第二条直接运行。每次实际执行都使用新的输出目录。
 
 ```bash
 # 同步基线：先预览，去掉 --dry-run 即执行
@@ -44,18 +44,7 @@ bash benchmarks/static/pi05_libero/run.sh \
   --schedule paper_async --overlap-actions 2 --quant none \
   --gpu 3 --output-dir runs/static/pi05_libero/paper-async-001
 
-# 同步＋单层W8A8
-bash benchmarks/static/pi05_libero/run.sh \
-  --schedule sync --quant w8a8-single-layer \
-  --gpu 3 --output-dir runs/static/pi05_libero/w8a8-001
-
-# 论文异步＋单层W8A8：组合尚未进行闭环验证
-bash benchmarks/static/pi05_libero/run.sh \
-  --schedule paper_async --overlap-actions 2 --quant w8a8-single-layer \
-  --gpu 3 --output-dir runs/static/pi05_libero/w8a8-paper-async-001
 ```
-
-`--quant w8a8-single-layer` 自动选择内置单层配置和profile，只替换 `TXT.B00.mlp.down`。不需要另外指定JSON；仍需提供量化源码和kernel路径。该预设使用 `skip_calibration` 静态筛选，不运行数据集探测，checkpoint自带normalization照常加载。量化实验保持 `--no-compile-model`。
 
 `--dry-run` 检查文件并打印解析后的计划，不导入GPU运行栈、不加载模型或启动模拟器，也不生成结果目录。预览成功不等于模型、设备或checkpoint数值正确。入口拒绝已有输出目录，避免混合不同实验结果。
 
@@ -92,7 +81,7 @@ bash benchmarks/static/pi05_libero/run.sh \
 | `--compile-model` / `--no-compile-model` | 默认不编译；量化smoke要求不编译 |
 | `--schedule` | `sync` 或 `paper_async` |
 | `--overlap-actions` | 默认0，范围0到 `n-action-steps` |
-| `--quant` | `none` 或 `w8a8-single-layer` |
+| `--quant` | 仅 `none`，没有内置量化模型预设 |
 | `--record-video` / `--no-record-video` | 录制所有实际评估episode / 关闭，默认关闭 |
 | `--video-episodes-per-task` | 可选非负整数，每任务最多录前N条完整episode，0关闭 |
 | `--video-fps` | 默认30，仅设置视频播放帧率 |
@@ -122,32 +111,16 @@ $$
 
 ## 已验证范围与外部依赖
 
-此前正式入口完成过 `libero_object` 的同步单episode（157步成功）、同checkpoint单个文本层W8A8的同步单episode（138步成功），以及原精度 `paper_async`、n′=2的单episode（200步成功）。这些运行使用旧reset语义，仅证明加载/替换与闭环连通性，不能作为修正初态协议后的全量基线。加载审计通过，W8A8记录确认安装1个对应包装层；论文异步试跑未提供推理profile，不报告周期或加速比。量化与论文异步组合尚未闭环验证；W4A4仅完成单Linear功能小试。
-
 当前运行记录 `environment_protocol=explicit_initial_state_v1`：[环境适配器](libero_adapter.py) 先重置底层环境，再应用指定初态和settling；只有显式reset推进初态列表，成功后的内部autoreset被抑制，终止环境在下一次显式reset前保持吸收态。[评估审计](evaluation_audit.py) 从环境读取实际任务/初态ID，逐episode记录并检查完整覆盖、重复及汇总一致性。
 
 该协议下已完成 `libero_object` 的全量两组评估：每组10任务×50初态，同checkpoint、seed42、batch10、n=5、10个flow推理步、原精度且不编译。同步成功494/500（98.8%），论文异步n′=2成功464/500（92.8%）；两组实际初态均各出现一次，加载与覆盖审计通过。这是该固定设置下的任务结果，未采集对应推理profile，因此不报告论文加速比。启动上述实验时设置 `--episodes 500 --batch-size 10`，运行产物仍保存在调用者指定的本地目录。
 
-全量验证目前限于上述原精度两组；量化检查仍为加载、替换和连通性smoke，不是全模型量化质量验收。用户须自行提供兼容资源，本仓库不下载或内置：
+全量验证目前限于上述原精度两组，尚未完成全模型量化质量验收。资源可按 [准备说明](../../../tools/RESOURCE_PREPARATION.md) 下载或复用本地文件，运行环境和兼容源码仍需自行安装：
 
 - VLASH sim checkout须支持 `runtime_stack=lerobot`、历史观测及入口所用参数。已跑通来源为 `d618e497eb6279fc9b95a78e1fa5635a51626a26` 工作树，含未提交改动，不能等同于原始上游 `sim/libero` 分支；每次运行记录实际source身份与dirty状态。
 - 使用普通、任务匹配的LeRobot π0.5 LIBERO checkpoint，以及同源processor、normalization和tokenizer。指定路径不代替预处理兼容性验证。
 - LIBERO环境、任务资产和配置目录须已就绪；Python环境须具备兼容的LeRobot、PyTorch、CUDA和模拟器依赖。本仓CPU开发依赖不足以运行模型。
 - 量化源码与kernel依赖由调用者显式提供，入口不安装它们，也不声称全部kernel已公开可安装。
-
-## 单 Linear 量化检查
-
-[quant_smoke.py](quant_smoke.py) 不加载π0.5或模拟器，使用合成Linear检查一个量化backend。已加载上述env时可运行：
-
-```bash
-"$ROBOTICS_PI05_PYTHON" benchmarks/static/pi05_libero/quant_smoke.py \
-  --quant-source "$ROBOTICS_QUANT_SOURCE" \
-  --kernel-source "$ROBOTICS_KERNEL_SOURCE" \
-  --scheme w8a8 --profile \
-  --gpu 3 --output-dir runs/static/pi05_libero/linear-w8a8-001
-```
-
-检查W4A4时改为 `--scheme w4a4` 并选择新目录；每个scheme在独立进程运行。`--profile`记录各shape的实际CUDA kernel名称，不测时延。输出 `report.json` 中的 `functional_pass` 仅表示该功能检查通过，不表示已建立精度门槛或测得加速。
 
 ## 汇总实验控制步数
 
@@ -177,8 +150,7 @@ python tools/summarize_experiment.py \
 
 | 类别 | 文件 | 用途 |
 | --- | --- | --- |
-| 输入默认值 / 预设 | [case.json](case.json)、[论文异步预设](paper-async.case.json)、[单层W8A8预设](w8a8-single-layer.case.json) | 保留可复用实验设置；高级用法可传 `--config PATH`，命令行继续覆盖 |
-| 高级量化层映射 | [quant-profiles.json](quant-profiles.json) | 选择量化层；单层快捷选项自动使用，换层时才需要自定义 |
+| 输入默认值 / 预设 | [case.json](case.json)、[论文异步预设](paper-async.case.json) | 保留可复用实验设置；高级用法可传 `--config PATH`，命令行继续覆盖 |
 | 自动输出 | manifest、加载审计、评测结果等 | 运行后自动生成，无需手工创建或修改 |
 
 自定义量化配置可使用 `--quant-ladder`、`--quant-selected-profile`、`--quant-profile`，并提供量化源码/kernel路径。入口拒绝错误或空的profile字段、重复profile名，记录实际安装的包装层，没有对应包装层时运行失败。包装层标记不替代实际CUDA kernel验证。[load_guard.py](load_guard.py) 按共享Parameter的tied-weight别名审计加载覆盖，不替代processor一致性、动作数值或任务能力验证。

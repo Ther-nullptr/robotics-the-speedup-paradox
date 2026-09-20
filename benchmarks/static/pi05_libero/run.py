@@ -260,8 +260,8 @@ def build_parser():
     selection = quant.add_mutually_exclusive_group()
     selection.add_argument(
         "--quant",
-        choices=("none", "w8a8-single-layer"),
-        help="Convenience preset; w8a8-single-layer changes TXT.B00.mlp.down only",
+        choices=("none",),
+        help="Disable quantization; no built-in quantized model preset is available",
     )
     selection.add_argument(
         "--quant-ladder",
@@ -308,16 +308,10 @@ def build_plan(args):
     if args.quant is not None:
         if "quant_selected_profile" in cli_options or quant_profile is not None:
             raise ValueError(
-                "--quant presets cannot be combined with custom profile flags; "
+                "--quant none cannot be combined with custom profile flags; "
                 "use --quant-ladder for a custom profile"
             )
-        if args.quant == "none":
-            cli_options.update(quant_ladder="none", quant_selected_profile=None)
-        else:
-            cli_options.update(
-                read_object(DEFAULT_CONFIG.with_name("w8a8-single-layer.case.json"))
-            )
-            quant_profile = DEFAULT_CONFIG.with_name("quant-profiles.json")
+        cli_options.update(quant_ladder="none", quant_selected_profile=None)
     options = load_options(args.config, cli_options)
     record_all = options["video_episodes_per_task"] == "all"
     video_limit = (

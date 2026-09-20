@@ -1,6 +1,6 @@
 # 静态任务实验入口
 
-本目录组织静态任务的case、运行入口和实验配置。[π0.5＋LIBERO](pi05_libero/README.md) 已有原精度评估、单层量化smoke及论文静态抽象 `paper_async` 入口；[Cosmos-Policy＋LIBERO](cosmos_libero/README.md) 已有独立 engine/simulator/单环境 runner，完成固定输入动作对齐及同步、论文异步各一个GPU闭环smoke。具体实验设置与验证范围分别见case说明。
+本目录组织静态任务的case、运行入口和实验配置。[π0.5＋LIBERO](pi05_libero/README.md) 已有原精度同步评估及论文静态抽象 `paper_async` 入口；[Cosmos-Policy＋LIBERO](cosmos_libero/README.md) 已有独立 engine/simulator/单环境 runner，完成固定输入动作对齐及同步、论文异步各一个GPU闭环smoke。具体实验设置与验证范围分别见case说明。
 
 | case入口 | 绑定范围 | 当前状态与接入边界 |
 | --- | --- | --- |
