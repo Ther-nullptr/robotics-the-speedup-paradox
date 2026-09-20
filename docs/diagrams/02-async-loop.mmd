@@ -1,39 +1,23 @@
 sequenceDiagram
-    accTitle: Planned Chunk-Handover Asynchronous Example
-    accDescr: This planned example applies only to cases that finish the current action chunk before handover. An observation is sampled at zero, inference completes at 80 ms, and the next chunk starts at 120 ms. Boundary wait is zero while observation age is 120 ms. DOM target replacement and native Kinetix JAX rollouts have their own execution protocols.
-    participant runner as 按块交接的 Runner
-    participant world as 该 case 的 ClockDriver
-    participant model as Policy / Backend
-    participant queue as ActionQueue
-    participant trace as TraceSink
-
-    Note over runner,trace: 按块交接的手算示例，尚未实现；t=0 时旧 chunk 已在执行
-    runner->>world: t=0：采样不可变 observation
-    world-->>runner: obs_id + episode_id + sample_time
-    runner-->>trace: observation_sampled
-    runner->>model: submit(request_id, observation)
-    runner-->>trace: inference_submitted
-
-    par 模型推理
-        model-->>trace: 实际开始时记录 inference_started
-        model->>model: 预处理 → forward → 动作可消费
-        model-->>runner: t=80 ms：completed(chunk)
-        runner->>runner: 校验 episode；满足 release 条件
-        runner->>queue: 新 chunk 可用，等待旧 chunk 交接
-        runner-->>trace: completed / released
-    and 世界与旧动作推进
-        loop t=0 至 t=120 ms：按控制节拍
-            world->>queue: 读取旧 chunk 的下一个动作
-            queue-->>world: 旧动作；欠载时采用声明的 hold 策略
-            world->>world: 更新控制器、动力学与观测
-            world-->>trace: 动作事件 + sim tick / 采样引用
+    accTitle: Implemented Paper Async Observation Selection
+    accDescr: The static runner advances the simulator serially. Each control step stores an observation snapshot. On a new request it selects t minus n-prime history, falling back to the current observation when history is insufficient, and executes the first n predicted actions.
+    participant runner as Static runner
+    participant simulator as Native simulator
+    participant engine as Cosmos engine
+    runner->>simulator: reset episode and settle
+    simulator-->>runner: observation and current instruction
+    runner->>engine: reset episode identity
+    loop Until success or budget
+        runner->>runner: append snapshot at control step t
+        opt No actions queued
+            runner->>runner: select snapshot at t minus n-prime
+            Note over runner: Use current snapshot if history is insufficient
+            runner->>engine: infer_chunk with images and proprio from same snapshot
+            engine-->>runner: H predicted actions
+            runner->>runner: queue first n actions
         end
+        runner->>simulator: step one action
+        simulator-->>runner: observation, success, terminal
+        runner->>runner: count one completed control step
     end
-
-    Note over runner,queue: t=120 ms：旧 chunk 结束；本例无额外注入等待
-    world->>queue: 请求下一个动作
-    queue-->>world: 新 chunk 的首动作，来源仍为 t=0 的观测
-    world-->>trace: action_started(t=120 ms, obs_id)
-    Note over world,trace: boundary_wait = 0 ms；observation_age = 120 ms
-    Note over runner,trace: 任意时刻 terminal：禁止新动作；在途结果隔离并 drain 后释放资源
-    Note over runner,trace: 仅适用于声明按块交接的 case；DOM 目标替换与 Kinetix JAX rollout 另定执行协议
+    Note over runner,engine: Serial history abstraction, inference timing is measured separately

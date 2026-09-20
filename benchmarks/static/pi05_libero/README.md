@@ -4,6 +4,8 @@
 
 ## 配置一次本机路径
 
+环境层次、已验证依赖组合和日志保存方法见 [环境指南](../../../docs/environment_setup.md)。
+
 缺少模型或 tokenizer 时，可先运行 `python tools/prepare_resources.py --case pi05_libero`，再显式加载 `~/.cache/robotics/env/pi05_libero.env`。模型默认放在 `~/.cache/robotics/hub/`，LIBERO资产沿用 `~/.cache/libero/assets/`；训练数据仅在 `--with-dataset` 时下载。下载依赖、已有资源复用及完整配置生成见 [资源准备说明](../../../tools/RESOURCE_PREPARATION.md)。运行环境和外部兼容源码仍须先安装。
 
 从仓库根目录复制 [路径模板](paths.env.example)，填写本机资源位置后显式加载：

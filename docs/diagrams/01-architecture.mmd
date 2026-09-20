@@ -1,75 +1,21 @@
 flowchart TB
-    accTitle: Case-Bound Static and Dynamic Benchmark Architecture
-    accDescr: Static and dynamic benchmarks bind compatible models, processors, tasks, environments and protocols into cases. DOM uses a model process and Isaac clock driver; Kinetix uses a native RL policy and JAX rollout. They share contracts, capability descriptions, trace and metric definitions, with optional execution component reuse. Green nodes are existing documents or CPU tools; all model execution is planned.
-
-    subgraph public_repo["robotics：独立公开仓库"]
-        direction TB
-        subgraph foundation["已有本地基座"]
-            direction LR
-            collaboration["AGENTS · Issue / PR · 任务与交接模板<br/>已有文件；远端规则待启用"]
-            contracts["schemas · validator · CPU tests<br/>已实现：数据与事件校验"]
-        end
-
-        subgraph static_track["静态 benchmark：入口已建立，运行实现 planned"]
-            static_entry["benchmarks/static/README.md<br/>静态实验入口"]
-            static_case["绑定的静态 case（planned）<br/>候选：π0.5＋LIBERO；Cosmos＋对应 LIBERO / RoboCasa<br/>LingBot：case 待确认"]
-            static_policy["静态模型 adapter（planned）<br/>各 case 的 checkpoint / processor / 动作规范"]
-            static_driver["Static Runner / ClockDriver（planned）<br/>case 指定 sync / async、控制步进与接管规则"]
-            static_entry --> static_case
-            static_case --> static_driver
-            static_driver -->|调用绑定模型| static_policy
-        end
-
-        subgraph dynamic_track["动态 benchmark：按 case 保留不同模型与执行循环"]
-            dynamic_entry["benchmarks/dynamic/README.md<br/>动态实验入口已建立"]
-            subgraph dom_branch["DOM 分支：运行实现 planned"]
-                dom_case["DOM case（planned）<br/>DynamicVLA checkpoint / processor<br/>DOM 任务、Isaac 版本与协议绑定"]
-                dom_model["DOM 模型进程（planned）<br/>观测请求 → 末端位姿目标"]
-                dom_driver["DOM Runner / Isaac ClockDriver（planned）<br/>传感采样 · 目标接管 · 动力学 · terminal"]
-                dom_case --> dom_driver
-                dom_driver -->|发送观测| dom_model
-                dom_model -->|返回位姿目标| dom_driver
-            end
-            subgraph kinetix_branch["Kinetix 分支：独立 case 待定，运行实现 planned"]
-                kinetix_entry["benchmarks/dynamic/kinetix/README.md<br/>独立实验入口已建立"]
-                kinetix_case["Kinetix case（planned）<br/>原生 RL policy、Jax2D 环境、参数与协议绑定"]
-                kinetix_policy["原生 RL policy（planned）<br/>Kinetix 动作空间；不强制 action chunk"]
-                kinetix_driver["JAX Rollout / ClockDriver（planned）<br/>state + PRNG · JIT / vmap / scan"]
-                kinetix_entry --> kinetix_case
-                kinetix_case --> kinetix_driver
-                kinetix_driver -->|原生 JAX 调用| kinetix_policy
-            end
-            dynamic_entry --> dom_case
-            dynamic_entry --> kinetix_entry
-        end
-
-        subgraph shared_core["共享底层：统一契约，不强制统一控制循环"]
-            capabilities["后端能力与状态契约<br/>设备 · 输入输出 · buffer 生命周期"]
-            executor["可选 Executor / Backend（planned）<br/>兼容分支按需复用执行组件"]
-            trace_metrics["Trace / metrics 定义与 CPU 工具<br/>已有；真实运行数据接入 planned"]
-            viewer["只读 Viewer（planned）<br/>按 case 解释时间线、成功判据与预算"]
-            executor --> trace_metrics
-            trace_metrics --> viewer
-        end
-        static_driver -.能力与生命周期约束.-> capabilities
-        dom_driver -.能力与生命周期约束.-> capabilities
-        kinetix_driver -.能力与生命周期约束.-> capabilities
-        static_policy -.可选复用.-> executor
-        dom_model -.可选复用.-> executor
-        static_driver -->|运行事件| trace_metrics
-        dom_driver -->|运行事件| trace_metrics
-        kinetix_driver -->|每环境事件与批量计时| trace_metrics
-        collaboration -.开发约定.-> static_entry
-        collaboration -.开发约定.-> dynamic_entry
-        contracts -.数据契约.-> trace_metrics
-    end
-
-    future_consumers["后续 VLM / WM 调用方<br/>独立项目；按能力复用公共底层"]
-    future_consumers -.单向依赖.-> capabilities
-
-    classDef existing fill:#dcfce7,stroke:#15803d,color:#14532d,stroke-width:1.5px
-    classDef planned fill:#dbeafe,stroke:#2563eb,color:#172554,stroke-width:1.5px
-    classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-width:1.5px
-    class collaboration,contracts,static_entry,dynamic_entry,kinetix_entry,capabilities,trace_metrics existing
-    class static_case,static_policy,static_driver,dom_case,dom_model,dom_driver,kinetix_case,kinetix_policy,kinetix_driver,executor,viewer planned
-    class future_consumers external
+    accTitle: Implemented Robotics Case Architecture
+    accDescr: Three static cases are runnable. Pi05 uses a compatible external evaluator; Cosmos cases share the native static runner, engine and simulator adapters. CPU contracts and analysis are shared. Dynamic cases remain planned.
+    pi05["pi05_libero CLI"] --> evaluator["External evaluator bridge"]
+    cosmos["cosmos_libero / cosmos_robocasa CLI"] --> runner["Static runner"]
+    runner --> engine["Cosmos engine"]
+    runner --> simulator["LIBERO / RoboCasa adapters"]
+    engine --> external["Explicit external model and simulator sources"]
+    simulator --> external
+    evaluator --> external
+    evaluator --> artifacts["Episode records / audits / videos"]
+    runner --> artifacts
+    artifacts --> tools["CPU summaries / trajectory metrics / speedup tools"]
+    contracts["Schemas and protocol definitions"] -.-> artifacts
+    dynamic["Planned: DynamicVLA + DOM / native JAX Kinetix"] -.-> contracts
+    classDef existing fill:#dcfce7,stroke:#15803d,color:#14532d
+    classDef planned fill:#dbeafe,stroke:#2563eb,color:#172554
+    classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    class pi05,evaluator,cosmos,runner,engine,simulator,artifacts,tools,contracts existing
+    class dynamic planned
+    class external external

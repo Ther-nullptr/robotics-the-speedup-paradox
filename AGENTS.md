@@ -8,6 +8,8 @@ Cosmos＋RoboCasa已提供单环境入口，当前验证限于TurnOffMicrowave�
 
 ## 开始工作
 
+本仓执行 [贡献与PR制度](CONTRIBUTING.md)：代码、配置和文档都在主题分支开发，通过PR进入main，不直接提交/推送main。依赖未合并功能时明确声明前置分支/PR，并使用对应base；不将已有功能混入文档PR。提交与PR标题采用 `type: 中文摘要 / English summary`，PR正文按模板写双语目的、范围、验证、影响与回退，小改动保持简短。维护者审核后默认以merge commit合并。用户明确授权合并某个PR时，在规则满足后继续执行，不重复询问同一授权；普通开发不自动合并。
+
 1. 阅读 `README.md`、`CONTRIBUTING.md`、当前 Issue/PR 的任务范围及相关 `docs/protocols/` 文档。
 2. 确认 `git status --short`、分支和基线 commit，保留其他人的修改。任务范围以 Issue/PR 和用户最新指令为准。
 3. 先跑相关最小例子，再改变一个可观察行为。缺少设备、资产或已知实验参数时明确记录，不自动编造。
@@ -34,7 +36,7 @@ Cosmos＋RoboCasa已提供单环境入口，当前验证限于TurnOffMicrowave�
 
 ## 验证与交接
 
-从仓库根目录运行与变更有关的命令，提交前执行 CPU 检查：
+按改动选择验证。纯文档/模板变更核对链接、命令、图稿和 `git diff --check`，不新增测试或运行GPU。Python行为或数据契约变更先做相关检查，提交前执行CPU检查：
 
 ```bash
 python -m ruff check tools tests benchmarks src
