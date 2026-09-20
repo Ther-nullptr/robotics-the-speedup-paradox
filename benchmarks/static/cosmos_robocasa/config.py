@@ -32,6 +32,7 @@ RESOURCE_ENV = {
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    common.add_arguments(parser)
     for name, variable in RESOURCE_ENV.items():
         value = os.environ.get(variable)
         parser.add_argument(
@@ -170,6 +171,8 @@ def build_plan(args):
     robocasa_identity["python_tree_sha256"] = common._json_hash(
         robocasa_identity["python_files_sha256"]
     )
+    options["model_runtime"] = args.model_runtime
+    options["optimizations"] = common.configuration(args, model="cosmos").to_dict()
     identity = {
         "case": options,
         "resources_sha256": {key: common._file_hash(p) for key, p in files.items()},

@@ -14,3 +14,17 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+# Keep imported execution copies close to their recorded sources. Undefined
+# names and syntax remain checked; unused training helpers are retained.
+[tool.ruff.lint.per-file-ignores]
+"src/robotics_bench/models/pi05/modeling_*.py" = ["F401", "F841", "E741"]
+"src/robotics_bench/models/cosmos/minimal_*.py" = ["F401", "F841"]
+"src/robotics_bench/models/cosmos/policy_*.py" = ["F401", "F841"]
+"src/robotics_bench/models/cosmos/cosmos_utils.py" = ["F401", "F841"]
+"tests/gpu/*.py" = ["E402"]
+
+[tool.setuptools.package-data]
+robotics_kernels = ["csrc/*.cu", "blackwell/csrc/*.cu", "blackwell/csrc/*.cuh", "blackwell/LICENSE", "blackwell/PROVENANCE.json"]
+"robotics_bench.models.pi05" = ["PROVENANCE.json"]
+"robotics_bench.models.cosmos" = ["PROVENANCE.json"]

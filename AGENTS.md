@@ -1,6 +1,6 @@
 # AI 协作约定
 
-本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO和Cosmos＋LIBERO入口。Cosmos引擎、原生模拟器适配与单环境runner位于 `src/robotics_bench/`。静态异步采用论文抽象 `paper_async`；尚未内置完整模型实现或量化kernel。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
+本仓库提供协作协议、数据schema、CPU契约/分析工具，以及基于外部兼容源码的π0.5＋LIBERO和Cosmos＋LIBERO入口。Cosmos引擎、原生模拟器适配与单环境runner位于 `src/robotics_bench/`。静态异步采用论文抽象 `paper_async`；已迁入PI0.5的PaliGemma/Gemma/SigLIP执行代码、Cosmos的policy/sampler/DiT热路径，以及独立BF16融合和INT4/INT8算子；Blackwell FP4/FP8源码保留但尚待目标硬件验证。通用框架、Cosmos VAE/attention依赖和模拟器仍为外部依赖。不要把模板、schema校验、synthetic轨迹或单次smoke说成完整性能/任务集结果。
 
 Cosmos＋RoboCasa已提供单环境入口，当前验证限于TurnOffMicrowave固定场景的sync/paper_async GPU smoke。RoboCasa采用三相机、H=32、独立robosuite1.5.1环境，reset后才读取本回合指令；不要复用LIBERO的H=16或预先固定语言。`--reference-run` 校验相同场景初始化，训练数据与厨房资产分别准备。
 
@@ -49,3 +49,11 @@ python -m compileall -q tools benchmarks src
 开发依赖安装命令见 `CONTRIBUTING.md`。`compileall` 是语法检查，不是 formatter。报告实际运行的命令、结果及未验证条件；schema 校验通过不能证明实时性、数值精度或任务成功率。
 
 完成或暂停时检查 diff，将需要共享的事实、证据和后续动作写入 Issue/PR 的交接摘要。个人过程记录可放 `.local/`、`docs/handoffs/` 或工作区研究目录，这些不进入 Git；不要求每次对话新增文档。代码、稳定协议、工具说明和可复现小样例随版本管理，研究综述、阶段记录和生成图表留本地。已提交文档不得链接被忽略的本地文件。合并和发布由维护者负责。
+
+## 算子优化与可视化
+
+推理优化入口见 `benchmarks/inference/README.md`。每项优化保留独立开关；默认不开启。每轮以实际无优化BF16锚点直接计算完整policy时延比；低精度另外对照共享优化相同的BF16。先验证实际加载的源码、算子命中及动作差异，再报告性能；单个输入的逐值一致不等于任务集成功率已验证。
+
+每轮通过外部 `profile-visualizer` skill生成历史图和可审阅记录，包含变慢/数值失败的候选。skill只渲染实测数据，不启动GPU、不估造缺失比较。实验ledger、trace、输入和生成图留在 `runs/`；稳定代码、来源记录和命令说明进入Git。
+
+INT实现参照本仓独立FP副本的loader/Linear/pack/prepare/forward_packed分层；不导入父目录VLM代码。格式、scale、zero-point、pack版本和实际硬件后端显式区分，不能把INT4称为FP4。

@@ -174,3 +174,20 @@ python tools/summarize_experiment.py \
 `schemas/` 下的JSON是格式定义，也无需作为每次运行的输入。此入口的manifest使用独立 `pi05-libero-smoke-v1` 格式，不是通用run-manifest v1，不能直接用其schema校验；目前尚未生产通用逐action trace。加载开始前失败时不一定有 `checkpoint-load.json`，dry-run只打印计划。输出均为本地实验产物，默认不提交Git。
 
 任务范围与共享交接写入Issue/PR；协议见 [组合实验](../../../docs/protocols/composable-experiments.md) 和 [模型接入](../../../docs/protocols/model-adapters.md)。
+
+## 本仓推理实现与优化开关
+
+默认 `--model-runtime owned` 使用 `src/robotics_bench/models/pi05/` 中维护的
+PI0.5、PaliGemma、Gemma 和 SigLIP 执行代码。外部 VLASH checkout 仍提供评测桥接，
+LeRobot 提供配置/processor；checkpoint 和数据不复制到源码目录。
+`--model-runtime native` 保留迁移前的模型参考路径。
+
+所有优化默认关闭。可重复传 `--enable flow_loop`、`--enable mask_cache`、
+`--enable rope`、`--enable gated_residual`、`--enable gelu_mul`、`--enable norm`、
+`--enable cuda_graph`；后者需要 `flow_loop`。`empty_image_cache` 只复用缺省相机占位
+图像的编码，并需要 `cuda_graph`。`projection_fusion` 是有舍入差异的实验候选。
+
+本仓低精度使用 `--precision int8 --quant-scope text` 等显式选项；整数准备可另外启用
+`shared_quant` 和 `activation_quant_fusion`。`--integer-tactic 0/1` 选择待比较的 kernel
+配置。旧 `--quant-ladder` 属于外部量化入口，不能与本仓优化混用。
+完整计时、数值检查与每轮图表见 [inference benchmark](../../inference/README.md)。

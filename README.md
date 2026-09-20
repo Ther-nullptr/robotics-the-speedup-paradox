@@ -114,3 +114,9 @@ Git只保留源码、必要配置、测试、稳定文档及小型合成样例�
 ## 参考与许可
 
 方法背景：[The Speedup Paradox](https://arxiv.org/abs/2606.28529)。模型与模拟器的出处和独立条款见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。自有代码许可证尚未选定；当前未声明项目已完成正式开源发布。
+## 算子优化入口
+
+[推理优化实验](benchmarks/inference/README.md)提供本仓模型执行代码、独立融合开关、
+BF16/INT4/INT8 对照、固定输入动作校验及逐轮 profile-visualizer 图表。
+[算子说明](src/robotics_kernels/README.md)记录格式、构建与验证范围。FP4/FP8 为独立
+保留的 Blackwell 源码，目标硬件验证另行进行。所有运行结果仍保存在被忽略的 `runs/`。

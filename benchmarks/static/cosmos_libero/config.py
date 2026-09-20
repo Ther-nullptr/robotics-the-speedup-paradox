@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 
 SUITE_STEP_LIMITS = {
@@ -20,6 +21,12 @@ SUITE_STEP_LIMITS = {
     "libero_goal": 300,
     "libero_10": 520,
 }
+
+_REPO = Path(__file__).resolve().parents[3]
+if str(_REPO / "src") not in sys.path:
+    sys.path.insert(0, str(_REPO / "src"))
+from robotics_bench.optimizations.entry import add_arguments, configuration  # noqa: E402
+
 RESOURCE_ENV = {
     "cosmos_source": "ROBOTICS_COSMOS_SOURCE",
     "checkpoint": "ROBOTICS_COSMOS_CHECKPOINT",
@@ -44,6 +51,7 @@ def build_parser():
             required=not value,
             help=f"Explicit resource path; defaults to ${environment}",
         )
+    add_arguments(parser)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--gpu", help="One physical GPU index or full GPU UUID")
     parser.add_argument("--suite", choices=SUITE_STEP_LIMITS, default="libero_object")
@@ -120,6 +128,8 @@ def _options(args):
         "paper_inference_time_source",
     )
     options = {name: getattr(args, name) for name in names}
+    options["model_runtime"] = args.model_runtime
+    options["optimizations"] = configuration(args, model="cosmos").to_dict()
     options.update(
         task_ids=_task_ids(args.task_ids),
         schedule=args.schedule
@@ -291,7 +301,9 @@ def _source_identity(root):
 
 def _entry_identity():
     files = set(Path(__file__).parent.glob("*.py"))
-    files.update((REPOSITORY / "src/robotics_bench").rglob("*.py"))
+    files.update((REPOSITORY / "src").rglob("*.py"))
+    files.update((REPOSITORY / "src/robotics_kernels").rglob("*.cu"))
+    files.update((REPOSITORY / "src/robotics_kernels").rglob("*.cuh"))
     files.update(
         REPOSITORY / name
         for name in (

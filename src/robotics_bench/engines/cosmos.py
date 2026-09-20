@@ -226,6 +226,7 @@ class CosmosEngine:
         self.config_name = config_name
         self.num_inference_steps = num_inference_steps
         self.action_horizon = action_horizon
+        self._optimization_stack = None
         self._model = None
         self._backend = None
         self._embeddings = {}
@@ -398,6 +399,36 @@ class CosmosEngine:
             self.close()
             raise
 
+    def configure_optimizations(self, config, *, runtime="owned"):
+        """Select the local execution code and keep switches active until close."""
+        if self._model is None:
+            raise RuntimeError("Load Cosmos before configuring optimizations")
+        if self._optimization_stack is not None:
+            raise RuntimeError("Cosmos optimizations are already configured")
+        if runtime not in ("owned", "native"):
+            raise ValueError("Unknown model runtime")
+        if runtime == "native":
+            if config.enabled or config.precision != "bf16":
+                raise ValueError("Optimizations require the owned runtime")
+            self.metadata["model_runtime"] = "native"
+            return
+        from contextlib import ExitStack
+        from robotics_bench.models.cosmos.runtime import bind_owned_runtime
+        from robotics_bench.models.cosmos import cosmos_utils
+        from robotics_bench.optimizations.cosmos import optimize_cosmos
+
+        self.metadata["owned_runtime_bindings"] = bind_owned_runtime(self._model)
+        self._backend.utils = cosmos_utils
+        stack = ExitStack()
+        try:
+            report = stack.enter_context(optimize_cosmos(self._model, config))
+        except BaseException:
+            stack.close()
+            raise
+        self._optimization_stack = stack
+        self.metadata["model_runtime"] = "owned"
+        self.metadata["optimizations"] = report
+
     def reset(self, episode_id: tuple):
         if self._model is None:
             raise RuntimeError("load CosmosEngine before reset")
@@ -464,6 +495,9 @@ class CosmosEngine:
         return actions
 
     def close(self):
+        if self._optimization_stack is not None:
+            self._optimization_stack.close()
+            self._optimization_stack = None
         backend = self._backend
         self._model = None
         self._backend = None

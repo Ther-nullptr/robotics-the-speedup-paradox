@@ -1,0 +1,42 @@
+{
+  "source": "https://github.com/NVlabs/cosmos-policy",
+  "note": "Reviewed local compatible source lacks upstream Git metadata; original hashes identify this source snapshot. Common framework, attention library, tokenizer and configuration dependencies remain external.",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "source": "cosmos_policy/_src/predict2/networks/minimal_v4_dit.py",
+      "original_sha256": "cc43ecf11b9fe06e5a66fe0dc0f02565e9c0c8b9af16007c58438b4523cb6975",
+      "destination": "minimal_v4_dit.py"
+    },
+    {
+      "source": "cosmos_policy/_src/predict2/networks/minimal_v1_lvg_dit.py",
+      "original_sha256": "7081b61ef8e9fd5b28f1578223bb2be153888567bfeb27d64284d97e0f1b220c",
+      "destination": "minimal_v1_lvg_dit.py"
+    },
+    {
+      "source": "cosmos_policy/models/policy_text2world_model.py",
+      "original_sha256": "d2d6af812e2241fa0d3d8c68620447bd0f23d236412ada9bad5c849df5b848f5",
+      "destination": "policy_text2world_model.py"
+    },
+    {
+      "source": "cosmos_policy/models/policy_video2world_model.py",
+      "original_sha256": "4f5314fdea8f3f05d210f99923ca07e3c05fe9e0756b71f77b201f4b52e460eb",
+      "destination": "policy_video2world_model.py"
+    },
+    {
+      "source": "cosmos_policy/experiments/robot/cosmos_utils.py",
+      "original_sha256": "f9aaa7c2e085d440e99ed27265bb72abb938145e7814595cdfe534c2fae4d4d8",
+      "destination": "cosmos_utils.py"
+    },
+    {
+      "source": "cosmos_policy/modules/cosmos_sampler.py",
+      "original_sha256": "d428b578159d7d2efdc962a16fa168a627e831bd6d96ebec4d8c8c4987156d82",
+      "destination": "cosmos_sampler.py"
+    },
+    {
+      "source": "cosmos_policy/modules/hybrid_edm_sde.py",
+      "original_sha256": "cd3cf2381ef7402964401b22644c1bac6f1ae3bd4a25f56df38a348e9c4fa624",
+      "destination": "hybrid_edm_sde.py"
+    }
+  ]
+}

@@ -508,3 +508,32 @@ def test_quantization_audit_records_wrapper_paths():
     assert module.audit_quantized_modules([Model()], "fp16_to_w4a4") == {
         "linear": "w4a4"
     }
+
+
+def test_owned_runtime_optimization_flags_are_explicit_in_plan(inputs):
+    result = invoke(
+        inputs,
+        "--enable",
+        "flow_loop",
+        "--enable",
+        "cuda_graph",
+        "--precision",
+        "int8",
+        "--quant-scope",
+        "text",
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["model_runtime"] == "owned"
+    assert plan["optimizations"]["switches"] == ["flow_loop", "cuda_graph"]
+    assert plan["optimizations"]["precision"] == "int8"
+    assert "owned_runtime" in plan["identity"]
+
+
+def test_native_runtime_rejects_local_optimization_flags(inputs):
+    result = invoke(
+        inputs, "--model-runtime", "native", "--enable", "rope", "--dry-run"
+    )
+    assert result.returncode != 0
+    assert "owned" in result.stderr

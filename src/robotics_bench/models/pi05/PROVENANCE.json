@@ -1,0 +1,37 @@
+{
+  "note": "Imported from the locally validated inference environment, including its existing OpenPI compatibility changes. Original file hashes identify the exact reviewed input; this is not claimed to be an unmodified upstream release.",
+  "sources": [
+    "https://github.com/huggingface/lerobot",
+    "https://github.com/huggingface/transformers",
+    "https://github.com/Physical-Intelligence/openpi"
+  ],
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "source": "lerobot/policies/pi05/modeling_pi05.py",
+      "original_sha256": "5757fbf69fa54f9d4f05b8c113ffbb647ee7d31ae341b7e956dbcb88d2468f3c",
+      "destination": "modeling_pi05.py"
+    },
+    {
+      "source": "transformers/models/gemma/modeling_gemma.py",
+      "original_sha256": "236196720ba5446704cc95a221aa43dd217e39afd72d92496f6307b1cd13a18a",
+      "destination": "modeling_gemma.py"
+    },
+    {
+      "source": "transformers/models/paligemma/modeling_paligemma.py",
+      "original_sha256": "b72b421de47b58662f9fc3f663100a333d31913d2d55a0a93a26fb364cf0657b",
+      "destination": "modeling_paligemma.py"
+    },
+    {
+      "source": "transformers/models/siglip/modeling_siglip.py",
+      "original_sha256": "ef2e99500f263fdd78db9d4d9a255e29d844eb92f53c25ad640f8056700ef84b",
+      "destination": "modeling_siglip.py"
+    }
+  ],
+  "modifications": [
+    "Bind PI0.5/PaliGemma to repository-local Gemma and SigLIP classes instead of environment model registration.",
+    "Use absolute Transformers common-runtime imports.",
+    "Remove the environment patch marker check; keep explicit dependency version and numerical verification.",
+    "Apply repository formatting; retain original copyright headers."
+  ]
+}

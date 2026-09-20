@@ -139,3 +139,15 @@ manifest 使用独立 `cosmos-libero-run-v1` 格式，`requests.jsonl` 是本 ca
 Cosmos 接入在基线 `1a4983e` 之后扩展，保留该基线已有的 π0.5 功能及其独立入口。模型实现依然来自调用者指定的外部源码。当前本机检查使用的 Cosmos 源码副本没有 `.git`，不能标为某个纯上游 commit：计划记录 Python 源码树 SHA-256 与 `git_available=false`，有可用 Git 信息时才记录真实 commit/dirty 身份。资源文件、本仓执行代码和选项共同进入 case 指纹。
 
 来源与条款边界见 [第三方记录](../../../THIRD_PARTY_NOTICES.md)；模型、任务、调度和时间口径分别遵循 [模型接入](../../../docs/protocols/model-adapters.md)、[仿真协议](../../../docs/protocols/simulation.md) 与 [加速比协议](../../../docs/protocols/speedup-metrics.md)。
+
+## 本仓执行代码与优化
+
+默认 `--model-runtime owned` 在加载并审计 checkpoint 后，绑定本仓的 Cosmos policy、
+sampler 和 DiT 执行代码；通用框架、VAE 和 attention 库仍为外部依赖。
+`--model-runtime native` 保留原始参考路径。
+
+优化默认关闭，可独立使用 `--enable modulation`、`--enable gated_residual` 和
+`--enable cuda_graph`。低精度用 `--precision int8 --quant-scope dit`，并可选
+`shared_quant`、`activation_quant_fusion`；INT4 属于单独的有损实验配置。
+推理计时、动作检查和自动图表见 [inference benchmark](../../inference/README.md)。
+单次 smoke 不代表整个任务集的质量已经验证。
