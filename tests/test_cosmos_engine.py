@@ -155,6 +155,125 @@ def test_extra_state_on_non_transformer_engine_module_is_rejected(tmp_path):
         )
 
 
+class MinimalA2AAttnOp:
+    def __init__(self, *, learned=False, buffer=False):
+        self.learned = learned
+        self.buffer = buffer
+
+    def named_parameters(self):
+        return [("weight", Tensor())] if self.learned else []
+
+    def named_buffers(self):
+        return [("running", Tensor())] if self.buffer else []
+
+    def state_dict(self):
+        return dict(self.named_parameters()) | dict(self.named_buffers())
+
+
+MinimalA2AAttnOp.__module__ = "cosmos_policy._src.predict2.networks.a2a_cp"
+CheckpointWrapper = type("CheckpointWrapper", (), {})
+CheckpointWrapper.__module__ = (
+    "torch.distributed.algorithms._checkpoint.checkpoint_wrapper"
+)
+
+
+class WrappedAttentionModel(FakeModel):
+    def __init__(self, op=None):
+        self.op = op if op is not None else MinimalA2AAttnOp()
+        self.wrapper = CheckpointWrapper()
+        super().__init__(
+            result=LoadResult(
+                [],
+                ["blocks.0._checkpoint_wrapped_module.cross_attn.attn_op._extra_state"],
+            )
+        )
+
+    def named_modules(self):
+        return super().named_modules() + [
+            ("net.blocks.0", self.wrapper),
+            ("net.blocks.0._checkpoint_wrapped_module.cross_attn.attn_op", self.op),
+        ]
+
+
+def test_legacy_attention_extra_state_matches_wrapped_stateless_operator(tmp_path):
+    key = "net.blocks.0.cross_attn.attn_op._extra_state"
+    report = run_guard(
+        tmp_path,
+        WrappedAttentionModel(),
+        {"net.weight": Tensor(), key: None},
+    )
+    assert report["status"] == "passed"
+    assert report["unexpected_keys"] == [key]
+    detail = report["allowed_extra_state_details"][key]
+    assert detail["module_type"].endswith("a2a_cp.MinimalA2AAttnOp")
+    assert "stateless" in detail["reason"]
+
+
+@pytest.mark.parametrize("variant", ["learned", "buffer", "unknown", "absent"])
+def test_legacy_attention_extra_state_needs_known_existing_stateless_operator(
+    tmp_path, variant
+):
+    if variant == "learned":
+        model = WrappedAttentionModel(MinimalA2AAttnOp(learned=True))
+    elif variant == "buffer":
+        model = WrappedAttentionModel(MinimalA2AAttnOp(buffer=True))
+    elif variant == "unknown":
+        model = WrappedAttentionModel(SimpleNamespace())
+    else:
+        model = FakeModel()
+    with pytest.raises(RuntimeError, match="unexpected"):
+        run_guard(
+            tmp_path,
+            model,
+            {
+                "net.weight": Tensor(),
+                "net.blocks.0.cross_attn.attn_op._extra_state": None,
+            },
+        )
+
+
+def test_legacy_attention_compatibility_never_allows_learned_keys(tmp_path):
+    with pytest.raises(RuntimeError, match="unexpected"):
+        run_guard(
+            tmp_path,
+            WrappedAttentionModel(),
+            {
+                "net.weight": Tensor(),
+                "net.blocks.0.cross_attn.attn_op.weight": Tensor(),
+            },
+        )
+
+
+def test_transformer_engine_extra_state_uses_checkpoint_wrapper_key_names(tmp_path):
+    class TELinear:
+        pass
+
+    TELinear.__module__ = "transformer_engine.pytorch.module.linear"
+
+    class Model(WrappedAttentionModel):
+        def state_dict(self):
+            return {
+                "net.weight": Tensor(),
+                "net.blocks.0.cross_attn.k_norm._extra_state": None,
+            }
+
+        def named_modules(self):
+            return super().named_modules() + [
+                (
+                    "net.blocks.0._checkpoint_wrapped_module.cross_attn.k_norm",
+                    TELinear(),
+                )
+            ]
+
+    model = Model()
+    model.net.result = LoadResult(
+        ["blocks.0._checkpoint_wrapped_module.cross_attn.k_norm._extra_state"], []
+    )
+    report = run_guard(tmp_path, model, {"net.weight": Tensor()})
+    assert report["status"] == "passed"
+    assert report["missing_keys"] == ["net.blocks.0.cross_attn.k_norm._extra_state"]
+
+
 def test_module_import_does_not_load_optional_dependencies():
     source = Path(__file__).resolve().parents[1] / "src"
     code = (

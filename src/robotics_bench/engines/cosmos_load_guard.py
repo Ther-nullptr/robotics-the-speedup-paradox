@@ -8,6 +8,68 @@ must therefore be checked. This guard is for the serial, single-model loader.
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import re
+
+
+def _module_type(module):
+    return type(module).__module__ + "." + type(module).__name__
+
+
+def _extra_state_compatibility(model):
+    """Map only verified native metadata exceptions to state_dict key names."""
+    modules = list(model.named_modules())
+    wrapper_type = (
+        "torch.distributed.algorithms._checkpoint.checkpoint_wrapper.CheckpointWrapper"
+    )
+    wrapped_prefixes = sorted(
+        (
+            name + "._checkpoint_wrapped_module"
+            for name, module in modules
+            if _module_type(module) == wrapper_type
+        ),
+        key=len,
+        reverse=True,
+    )
+
+    def canonical_key(key):
+        # Torch's real CheckpointWrapper strips this component in state_dict,
+        # but includes it in named_modules and load incompatibility reports.
+        for prefix in wrapped_prefixes:
+            if key.startswith(prefix + "."):
+                key = prefix.rsplit(".", 1)[0] + key[len(prefix) :]
+        return key
+
+    details = {}
+    operator_types = {}
+    for raw_name, module in modules:
+        name = canonical_key(raw_name)
+        class_name = _module_type(module)
+        reason = None
+        if name and any(
+            cls.__module__.startswith("transformer_engine.")
+            for cls in type(module).__mro__
+        ):
+            reason = "TransformerEngine non-parameter FP8 extra state"
+        if re.fullmatch(r"net\.blocks\.\d+\.cross_attn\.attn_op", name):
+            operator_types[name] = class_name
+            if (
+                class_name
+                == "cosmos_policy._src.predict2.networks.a2a_cp.MinimalA2AAttnOp"
+                and not list(module.named_parameters())
+                and not list(module.named_buffers())
+                and not module.state_dict()
+            ):
+                reason = (
+                    "Legacy TransformerEngine attention metadata on the verified "
+                    "stateless MinimalA2AAttnOp (no parameters, buffers, or state)"
+                )
+        if reason is not None:
+            details[name + "._extra_state"] = {
+                "module_type": class_name,
+                "module_path": raw_name,
+                "reason": reason,
+            }
+    return details, operator_types, canonical_key
 
 
 @contextmanager
@@ -23,6 +85,8 @@ def checkpoint_load_guard(loader, audit_path: Path):
         "unexpected_keys": [],
         "shape_mismatches": [],
         "allowed_extra_state_keys": [],
+        "allowed_extra_state_details": {},
+        "attention_operator_types": {},
         "errors": [],
     }
     restores = []
@@ -43,16 +107,11 @@ def checkpoint_load_guard(loader, audit_path: Path):
         if report.get("model_class"):
             fail("multiple model instances are unsupported")
         report["model_class"] = type(model).__module__ + "." + type(model).__name__
-        allowed = {
-            name + "._extra_state"
-            for name, module in model.named_modules()
-            if name
-            and any(
-                cls.__module__.startswith("transformer_engine.")
-                for cls in type(module).__mro__
-            )
-        }
+        details, operator_types, canonical_key = _extra_state_compatibility(model)
+        allowed = set(details)
         report["allowed_extra_state_keys"] = sorted(allowed)
+        report["allowed_extra_state_details"] = details
+        report["attention_operator_types"] = operator_types
         original_load = model.load_state_dict
 
         def wrap_child(name, module):
@@ -71,7 +130,10 @@ def checkpoint_load_guard(loader, audit_path: Path):
                 ):
                     fail(f"{name}.load_state_dict returned no verifiable result")
                 for field in ("missing_keys", "unexpected_keys"):
-                    keys = [name + "." + key for key in getattr(result, field)]
+                    keys = [
+                        canonical_key(name + "." + key)
+                        for key in getattr(result, field)
+                    ]
                     report[field] = sorted(set(report[field]) | set(keys))
                     invalid = sorted(set(keys) - allowed)
                     if invalid:
