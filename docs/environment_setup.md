@@ -19,7 +19,7 @@ python tools/compare_speedups.py --input examples/speedups/synthetic.json --mark
 python tools/embodied/trajectory_metrics.py --input tools/embodied/examples/smooth.csv
 ```
 
-CPU开发依赖为NumPy、jsonschema、pytest和Ruff，不包含Torch、CUDA或模拟器。绘图按需安装：
+CPU开发依赖为NumPy、SciPy、jsonschema、pytest和Ruff。SciPy用于RoboTwin末端位姿旋转组合的CPU检查；开发环境不包含Torch、CUDA或模拟器。绘图按需安装：
 
 ```bash
 python -m pip install -r tools/embodied/requirements-plot.txt
