@@ -203,8 +203,9 @@ def main():
         rows = []
         for factor, variant in (
             (1, "direct"),
-            (40, "direct"),
-            (40, "impulse_motor_collision"),
+            (2, "impulse_motor_collision"),
+            (2, "impulse_motor_collision_budget"),
+            (2, "impulse_motor_collision_joint_clock"),
         ):
             env, params, _ = make_refined_env(static, base, factor, variant)
             commands = env.action_type.process_action(action, level, static)
@@ -245,6 +246,7 @@ def main():
                     "physics_dt_seconds": params.dt,
                     "reward_sample_micro_indices": [0, factor],
                     "recording_state_max_abs_error": error,
+                    "solver_iterations_per_physics_step": env.physics_engine.static_sim_params.num_solver_iterations,
                 }
             )
         report["tasks"].append(

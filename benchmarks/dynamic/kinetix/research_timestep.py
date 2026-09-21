@@ -40,7 +40,19 @@ def compare(reference, candidate, tolerance=1e-6):
         if key == "rotation":
             delta = np.arctan2(np.sin(delta), np.cos(delta))
         result[f"{key}_rmse_at_common_end"] = float(np.sqrt(np.mean(delta[-1] ** 2)))
+        # Exclude the shared reset state: matching endpoints can still hide
+        # transient drift during the actual simulated trajectory.
+        prefix = delta[1:]
+        result[f"{key}_rmse_over_common_prefix"] = (
+            float(np.sqrt(np.mean(prefix**2))) if len(prefix) else None
+        )
+        result[f"{key}_max_abs_over_common_prefix"] = (
+            float(np.max(np.abs(prefix))) if len(prefix) else None
+        )
         if key == "position":
+            result["position_max_body_distance_over_common_prefix"] = (
+                float(np.max(np.linalg.norm(prefix, axis=-1))) if len(prefix) else None
+            )
             per_step = np.max(np.abs(delta).reshape(count, -1), axis=1)
             indices = np.flatnonzero(per_step > tolerance)
             result["first_position_divergence_control"] = (

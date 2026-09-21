@@ -136,6 +136,8 @@ RTX 6000 Ada上完成 `car_launch` 与 `mjc_walker`、N∈{1,5}、L∈{0,21.938 
 
 研究入口的外层动作更新默认10 Hz（`--control-hz 10`），每动作保持3个原生tick，每4次动作更新请求新policy chunk，名义推理频率2.5 Hz。物理步长、电机反馈以及原生终止/预算时钟独立保留；`--control-hz 30`恢复此前研究设置。常规`run.py`仍采用原生协议。
 
+物理细分默认采用较温和的`--factors 1,2 --variants impulse_motor_collision`，比较16.667 ms与8.333 ms；4倍、40倍需显式指定。视频工具可用`--factors 2,4`展示同一方法的多个细分倍数，并比较共同前缀的整段误差。求解迭代数匹配和关节位置校正时钟两个额外候选仅作消融，尚未恢复完整任务一致性，见[研究结果](../../../docs/kinetix-timestep-study.md#温和细分默认2倍保留10-hz动作更新)。
+
 ## English summary
 
 This case owns the RTC flow model, Kinetix runtime and Jax2D physics source. Supply only a trusted local checkpoint directory and a Python 3.11 JAX environment. Native-blend replays declared action availability on the unchanged native physics grid; it is a processed-command time-average approximation, not exact substep integration or hardware-in-the-loop execution. Flow-step and latency sweeps use paired seeds and per-cell failure-budget statistics. Optional videos retain every evaluated control frame. See the commands above; `--source` is intentionally absent.

@@ -12,6 +12,19 @@ def relaxation_at_substep(coefficient, factor):
     return -math.expm1(math.log1p(-coefficient) / factor)
 
 
+def solver_iterations_at_substep(native_iterations, factor):
+    """Keep the iteration count per native window, without fractional rounding."""
+    if type(factor) is not int or factor < 1:
+        raise ValueError("factor must be a positive integer")
+    if type(native_iterations) is not int or native_iterations < 1:
+        raise ValueError("native_iterations must be a positive integer")
+    if native_iterations % factor:
+        raise ValueError(
+            "factor must divide the native solver iteration budget exactly"
+        )
+    return native_iterations // factor
+
+
 def refined_params(base, factor, variant):
     if variant not in {
         "direct",
@@ -21,10 +34,18 @@ def refined_params(base, factor, variant):
         "held_motor",
         "held_motor_collision",
         "impulse_motor_collision",
+        "impulse_motor_collision_budget",
+        "impulse_motor_collision_joint_clock",
     }:
         raise ValueError(f"Unknown refinement variant: {variant}")
     changes = {"dt": float(base.dt) / factor}
-    if variant in {"collision", "held_motor_collision", "impulse_motor_collision"}:
+    if variant in {
+        "collision",
+        "held_motor_collision",
+        "impulse_motor_collision",
+        "impulse_motor_collision_budget",
+        "impulse_motor_collision_joint_clock",
+    }:
         changes["baumgarte_coefficient_collision"] = (
             base.baumgarte_coefficient_collision / factor
         )
@@ -48,6 +69,12 @@ def make_refined_env(static, base, factor, variant):
 
     params = refined_params(base, factor, variant)
     refined_static = static.replace(frame_skip=int(static.frame_skip) * factor)
+    if variant == "impulse_motor_collision_budget":
+        refined_static = refined_static.replace(
+            num_solver_iterations=solver_iterations_at_substep(
+                int(static.num_solver_iterations), factor
+            )
+        )
     environment = native.make_kinetix_env_from_name(
         "Kinetix-Symbolic-Continuous-v1", static_env_params=refined_static
     )
@@ -94,16 +121,26 @@ def make_refined_env(static, base, factor, variant):
                 impulses = jax.vmap(motor)(jnp.arange(static.num_joints))
 
             def microstep(current, micro_index):
+                step_params = params
+                if variant == "impulse_motor_collision_joint_clock":
+                    # Only direct joint position correction keeps the native
+                    # clock. Velocity, angular-limit and contact solves still
+                    # run at h. The index resets for each native H window.
+                    step_params = params.replace(
+                        baumgarte_coefficient_joints_p=jnp.where(
+                            micro_index == 0, params.baumgarte_coefficient_joints_p, 0
+                        )
+                    )
                 if impulses is None:
                     current, manifolds = environment.physics_engine.step(
-                        current, params, commands
+                        current, step_params, commands
                     )
                 else:
                     applied = impulses
                     if variant.startswith("impulse"):
                         applied = jnp.where(micro_index == 0, impulses, 0)
                     current, manifolds = environment.physics_engine.step(
-                        current, params, commands, motor_impulses=applied
+                        current, step_params, commands, motor_impulses=applied
                     )
                 reward, info = environment.compute_reward_info(current, manifolds)
                 if record:

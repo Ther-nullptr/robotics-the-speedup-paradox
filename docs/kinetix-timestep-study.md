@@ -153,6 +153,43 @@ source .local/kinetix.env
 
 已有动作带可用`--action-tape-dir <previous-run>`代替`--policy-dir`，无需再次加载模型。原始MP4为500×500、30 FPS，每条控制一帧并包含初态；这是从实际模拟器状态采样，不是对轨迹插值。并排MP4默认1/3倍速，结束的面板保留终止帧并明确标记`[held]`；右删失显示`TAPE END: no terminal observed`。这类视频不展示全部2400 Hz微步，但底层确实执行了这些微步。
 
-`validate_refinement.py`检查隔离电机、两关各4条控制的原版执行与提交`9add270`的冻结step逐值一致，并保存一条控制内的微步位置、关节位置、contacts和rewards。实测记录路径与正常路径的末状态逐值一致；原版每条控制2个物理步，r=40为80个。此检查不是完整轨迹接触一致性证明。研究源码和必要说明随分支管理，MP4、NPZ和运行记录均留在忽略的`runs/`目录。
+`validate_refinement.py`检查隔离电机、两关各4条控制的原版执行与提交`9add270`的冻结step逐值一致，并保存一条控制内的微步位置、关节位置、contacts和rewards。此前r=40验证记录了原版每条控制2个物理步、细分80个，记录路径与正常路径末状态逐值一致。当前检查采用下面的温和r=2候选，验证2/4个实际物理步以及相应求解迭代数。此检查不是完整轨迹接触一致性证明。研究源码和必要说明随分支管理，MP4、NPZ和运行记录均留在忽略的`runs/`目录。
 
 微步trace中的`polygon_position`和`circle_position`是该微步结束状态，`contacts`/`rewards`来自微步起点生成的manifold；`joint_position`是solver缓存，不能当作微步结束状态重新计算的关节锚点。分析事件与轨迹时需保留这一区别。
+
+## 温和细分：默认2倍，保留10 Hz动作更新
+
+研究入口现在默认`--factors 1,2 --variants impulse_motor_collision`，即原生16.667 ms与细分8.333 ms对照；每条原生tick从2个物理步变为4个。外层命令仍为10 Hz、电机反馈60 Hz，终止检查和256 tick预算保持原时钟。4倍、40倍细分以及其他候选均需显式选择。这个默认值减少了细分强度，**不是原生等价性认证**。
+
+本轮复用前述10 Hz录像的同一动作带和初态，没有重新采样policy。比较r=2/4/40时，统一裁到各关共同观察的前缀，再计算整段采样轨迹的位置RMSE：
+
+| 任务 | 共同原生tick数 | r=2 | r=4 | r=40 |
+| --- | ---: | ---: | ---: | ---: |
+| car_launch | 58 | 0.250164 | 0.414750 | 0.499854 |
+| mjc_walker | 256 | 0.035469 | 0.048821 | 0.055723 |
+
+位置指标下降不代表所有指标改善。Car Launch的旋转RMSE在r=2时为1.575770 rad，r=40时为0.827596 rad；原版第71 tick失败，r=2第58 tick失败，r=40第63 tick失败，r=4至动作带末尾第71 tick未终止。Walker三种设置均到256 tick预算，这不证明自然任务终止时刻相同；r=2的最大单刚体位置偏移仍为0.294727 world units。完整任务一致性尚未达成。
+
+另外做了两项独立消融，均未设为默认：
+
+- `impulse_motor_collision_budget`：r=2每微步只做5轮约束求解，每个原生H窗口仍合计10轮，避免把约束迭代数翻倍。r必须整除原生迭代数10，否则拒绝，不做隐式取整。相同迭代数不代表相同计算量或动力学，因为碰撞检测、warm-start及积分仍更频繁。
+- `impulse_motor_collision_joint_clock`：保持每微步10轮速度、角度/限位和接触求解，仅让关节直接位置校正保持60 Hz。r=2时每条原生tick的系数为`[0.7,0,0.7,0]`，每个H窗口重置；校正依据候选自身的约束误差，没有读取原版位置。
+
+两项消融都没有稳定降低误差。相同58 tick前缀下，Car Launch的位置RMSE由普通r=2的0.250164变为budget候选的0.317113，虽然旋转RMSE减小；Walker位置RMSE由0.035469变为0.061688。joint-clock候选在Car Launch第55 tick失败，Walker整段位置RMSE为0.038686。它们仅保留作研究开关。
+
+工具现在同时输出共同前缀RMSE、峰值坐标差和最大单刚体欧氏位移差。共同初态不参与这些整段指标，旋转差先按2π周期处理。这些指标来自30 Hz状态采样，不覆盖所有细分步或全部接触事件。视频叠加文字注明模拟时刻、细分倍数、求解迭代数和关节位置校正频率；详细指标保存在`comparison_videos.json`。
+
+```bash
+# Default: native physics versus 2x refinement, with 10 Hz commands.
+"$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/research_refinement.py \
+  --levels car_launch,mjc_walker --policy-dir "$ROBOTICS_KINETIX_POLICY_DIR" \
+  --record-video --gpu 0 --output-dir runs/dynamic/kinetix/conservative-001
+
+"$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/compare_refinement_videos.py \
+  --run-dir runs/dynamic/kinetix/conservative-001
+
+# For a run explicitly containing factors 1,2,4, display all three side by side.
+"$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/compare_refinement_videos.py \
+  --run-dir runs/dynamic/kinetix/conservative-matrix-001 \
+  --variants impulse_motor_collision --factors 2,4
+```

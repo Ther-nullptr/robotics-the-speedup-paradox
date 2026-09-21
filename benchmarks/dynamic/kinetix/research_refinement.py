@@ -21,10 +21,14 @@ from robotics_bench.kinetix.command_clock import CommandClock  # noqa: E402
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--levels", default="mjc_walker,car_launch")
-    parser.add_argument("--factors", default="1,40")
+    parser.add_argument(
+        "--factors",
+        default="1,2",
+        help="Physics refinement factors; default compares native and 2x refinement",
+    )
     parser.add_argument(
         "--variants",
-        default="direct,collision,held_motor_collision,impulse_motor_collision",
+        default="impulse_motor_collision",
     )
     parser.add_argument(
         "--controls",
@@ -111,6 +115,7 @@ def run(args, factors, resources):
             for name in (
                 "benchmarks/dynamic/kinetix/refinement.py",
                 "benchmarks/dynamic/kinetix/research_refinement.py",
+                "benchmarks/dynamic/kinetix/research_timestep.py",
                 "src/robotics_bench/kinetix/native/jax2d/engine.py",
                 "src/robotics_bench/kinetix/command_clock.py",
             )
@@ -264,10 +269,24 @@ def run(args, factors, resources):
                     "motor_feedback_hz": 1 / base.dt
                     if "motor" in variant
                     else 1 / params.dt,
+                    "joint_position_correction_hz": 1 / base.dt
+                    if variant == "impulse_motor_collision_joint_clock"
+                    else 1 / params.dt,
+                    "joint_position_correction_coefficients_per_native_window": [
+                        params.baumgarte_coefficient_joints_p
+                    ]
+                    + [0.0] * (factor - 1)
+                    if variant == "impulse_motor_collision_joint_clock"
+                    else [params.baumgarte_coefficient_joints_p] * factor,
                     "reward_sampling": "native_physics_starts",
                     "level_sha256": hashlib.sha256(level_path.read_bytes()).hexdigest(),
                     "params": asdict(params),
                     "static": asdict(vstatic),
+                    "solver_iterations_per_physics_step": vstatic.num_solver_iterations,
+                    "solver_iterations_per_native_window": vstatic.num_solver_iterations
+                    * factor,
+                    "solver_iterations_per_native_tick": vstatic.num_solver_iterations
+                    * vstatic.frame_skip,
                     "physics_dt_seconds": params.dt,
                     "control_dt_seconds": params.dt * vstatic.frame_skip,
                     "observed_controls": len(rewards),
