@@ -39,7 +39,6 @@ The entry always measures an unoptimized BF16 anchor. For low precision it also
 measures BF16 with the same shared optimizations, then the selected candidate:
 
 ```bash
-export ROBOTICS_CUTLASS_ROOT=/path/to/compatible-cutlass
 export CUDA_HOME=/path/to/compatible-cuda
 # Add to the PI0.5 command above:
 # --precision int8 --quant-scope text --enable shared_quant --enable activation_quant_fusion
@@ -47,8 +46,10 @@ export CUDA_HOME=/path/to/compatible-cuda
 
 Integer formats use signed INT8 or packed signed INT4, dynamic per-row activation
 scales, per-output-channel weight scales, S32 accumulation and a BF16 epilogue.
+Integer source and its pinned CUTLASS headers are packaged inside robotics;
+the integer build does not use `ROBOTICS_CUTLASS_ROOT` or another project's kernels.
 Activation prepare/pack and output conversion are part of the timing. Tactics 0
-and 1 select explicit CUTLASS tiles; compare them on real shapes with
+through 7 select explicit CUTLASS tiles; compare them on real shapes with
 `--integer-tactic`. INT4/INT8 are not FP4/FP8, and low precision is not lossless.
 FP4/FP8 sources and build tooling are preserved under
 `src/robotics_kernels/blackwell/` and `tools/build_blackwell.py`; they require a
@@ -95,3 +96,58 @@ reuses only the encoder output for known missing-camera placeholders, whose
 pixels are fixed by the owned policy. Real observation images are always
 re-encoded. Changing camera-presence roles invalidates the graph; cached
 embedding storage is retained for the lifetime of its graph.
+
+## Integer fusion and tuning
+
+The implementation is under `src/robotics_kernels/ampere_ada/`; portable fusion
+and graph helpers are under `common/`, while Blackwell keeps its own sources.
+
+Add independent switches to the complete policy benchmark or case launcher:
+
+```bash
+# INT8 or INT4 uses actual integer Tensor Core GEMM:
+# --precision int4 --integer-tactic 1 --quant-scope text
+# --enable shared_quant --enable activation_quant_fusion
+# --enable integer_pack_reuse
+# Optional ablations:
+# --enable integer_qkv
+# --enable integer_gate_up       # PI0.5 gated MLP only
+# --enable integer_group_views   # requires projection grouping
+```
+
+`integer_grouped` enables both projection group kinds. Mixed integer formats are
+grouped only within compatible subsets. `integer_group_views` avoids explicit
+output-slice copies; model consumers still determine any further layout work.
+Group output and input caches belong to one serialized model call.
+
+For a cohort with one loaded model, `--variants FILE` accepts a list of variant
+objects with `id`, `precision`, `switches`, `scopes` and `tactic`. Omitted fields
+inherit CLI settings. IDs must be unique safe filenames. Shared fusion switches
+must match the CLI configuration so every low-precision row has a matching BF16
+reference. Quantization-specific switches may differ. The benchmark also saves
+validation action arrays and comparisons against the first same-precision row.
+Large action drift is reported and does not stop finite-output performance tests.
+
+Measure individual shapes separately from complete policy latency:
+
+```bash
+python benchmarks/inference/bench_integer.py --case both --gpu 0 \
+  --pack-reuse --output-dir runs/optimization/integer/round-001
+python benchmarks/inference/render_integer.py \
+  --input runs/optimization/integer/round-001 \
+  --skill /path/to/profiler-visualizer \
+  --render-python /path/to/render-env/bin/python
+```
+
+Shapes come from recorded PI0.5 text and Cosmos DiT calls, including explicit
+projection concatenations. `prepared_gemm` excludes activation preparation;
+`complete_linear` includes it. Both use CUDA events around repeated graph nodes,
+not policy wall time. The JSON retains every tactic and repeated sample; CSV
+lists the best observed complete-Linear tactic per shape/precision. It does not
+silently change a model's dispatch policy. Validate the chosen tactic in the
+complete policy path on the same GPU.
+
+Diagnostic charts distinguish integer and floating matrix work, matrix reduction,
+copy/cast, normalization, quantization and pointwise arithmetic. GPU duration
+sums remain separate from synchronized policy-service medians. Breakdowns with
+more than four profiles are paginated with their original anchor repeated.

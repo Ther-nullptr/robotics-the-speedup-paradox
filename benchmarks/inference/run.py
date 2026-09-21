@@ -20,8 +20,13 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from robotics_bench.optimizations.config import OptimizationConfig, SWITCHES  # noqa:E402
-from robotics_bench.profiling.history import build_history, PRECISION_SWITCHES  # noqa:E402
+from robotics_bench.optimizations.config import (  # noqa: E402
+    OptimizationConfig,
+    SWITCHES,
+    TACTIC_IDS,
+    measurement_configurations,
+)
+from robotics_bench.profiling.history import build_history  # noqa:E402
 
 
 def parser():
@@ -40,7 +45,13 @@ def parser():
         action="append",
         choices=("text", "expert", "vision", "projector", "dit"),
     )
-    p.add_argument("--integer-tactic", type=int, choices=(0, 1), default=0)
+    p.add_argument("--integer-tactic", type=int, choices=TACTIC_IDS, default=0)
+    p.add_argument("--quant-tier", type=int, choices=range(11))
+    p.add_argument(
+        "--variants",
+        type=Path,
+        help="Measure explicit variant configurations in one loaded-model cohort",
+    )
     p.add_argument("--steps", type=int)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--validation-seed", action="append", type=int)
@@ -184,7 +195,10 @@ def main(argv=None):
             args.quant_scope or (("text",) if args.case == "pi05_libero" else ("dit",))
         ),
         args.integer_tactic,
+        args.quant_tier,
     )
+    variants = json.loads(args.variants.read_text()) if args.variants else None
+    configurations = measurement_configurations(config, variants)
     output = args.output_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     os.environ.update(
@@ -213,6 +227,8 @@ def main(argv=None):
     metadata = {
         "case": args.case,
         "config": config.to_dict(),
+        "configurations": [{"id": name, **c.to_dict()} for name, c in configurations],
+        "variants_sha256": digest(args.variants) if args.variants else None,
         "task": args.task,
         "input_sha256": [
             digest(p.expanduser().resolve())
@@ -239,24 +255,11 @@ def main(argv=None):
     call = apply = close = None
     records = []
     profiles = []
+    precision_references = {}
     try:
         start = time.perf_counter()
         call, apply, close, model_info = load_runner(args, output)
         metadata.update(model=model_info, load_seconds=time.perf_counter() - start)
-        configurations = [("original", OptimizationConfig())]
-        if config.precision != "bf16":
-            configurations.append(
-                (
-                    "optimized-bf16",
-                    OptimizationConfig(
-                        tuple(s for s in config.enabled if s not in PRECISION_SWITCHES),
-                        "bf16",
-                        config.scopes,
-                        config.tactic,
-                    ),
-                )
-            )
-        configurations.append(("candidate", config))
         reference = []
         for name, current in configurations:
             start = time.perf_counter()
@@ -280,10 +283,12 @@ def main(argv=None):
                     squared = 0.0
                     count = 0
                     checks = []
+                    validation_actions = []
                     for index, observation in enumerate(inputs):
                         for seed in metadata["validation_seeds"]:
                             torch.manual_seed(seed)
                             actual = call(observation, args.task, seed)
+                            validation_actions.append(actual.copy())
                             if name == "original":
                                 reference.append(actual.copy())
                             expected = reference[len(checks)]
@@ -311,10 +316,11 @@ def main(argv=None):
                             )
                     record = {
                         "id": name,
-                        "precision": current.precision,
+                        "precision": current.precision_label,
                         "switches": list(current.enabled),
                         "scopes": list(current.scopes),
                         "tactic": current.tactic,
+                        "quant_tier": current.quant_tier,
                         "samples_ms": samples,
                         "median_ms": float(np.median(samples)),
                         "exact": exact,
@@ -325,6 +331,33 @@ def main(argv=None):
                         "coverage": deepcopy(coverage),
                         "recorded_at": datetime.now(timezone.utc).isoformat(),
                     }
+                    signature = (
+                        current.precision,
+                        current.scopes if current.precision != "bf16" else (),
+                        current.quant_tier,
+                    )
+                    numerical_id, numerical_actions = precision_references.setdefault(
+                        signature, (name, validation_actions)
+                    )
+                    record["same_precision_reference"] = {
+                        "id": numerical_id,
+                        "exact": all(
+                            np.array_equal(a, b)
+                            for a, b in zip(validation_actions, numerical_actions)
+                        ),
+                        "max_abs": max(
+                            float(
+                                np.max(
+                                    np.abs(a.astype(np.float64) - b.astype(np.float64))
+                                )
+                            )
+                            for a, b in zip(validation_actions, numerical_actions)
+                        ),
+                    }
+                    np.savez_compressed(
+                        output / (name + "-validation-actions.npz"),
+                        **{f"check_{i}": a for i, a in enumerate(validation_actions)},
+                    )
                     record["speedup_vs_baseline"] = (
                         records[0]["median_ms"] / record["median_ms"]
                         if records
@@ -399,10 +432,13 @@ def main(argv=None):
                 "statistic": "median",
             },
         }
-        current = (
-            "candidate"
-            if config.precision == "bf16" and records[-1]["exact"]
-            else ("optimized-bf16" if len(records) == 3 else "original")
+        current = next(
+            (
+                r["id"]
+                for r in reversed(records)
+                if r["precision"] == "bf16" and r["exact"]
+            ),
+            "original",
         )
         history = build_history(
             records,
@@ -444,20 +480,25 @@ def main(argv=None):
                 check=True,
             )
         if args.profile_skill and profiles:
+            from robotics_bench.profiling.breakdown import pages
+
             renderer = (
                 args.profile_skill.expanduser().resolve()
                 / "scripts/render_profile_breakdown.py"
             )
-            subprocess.run(
-                [
-                    args.render_python,
-                    str(renderer),
-                    str(output / "profile-breakdown.json"),
-                    "--output-dir",
-                    str(output / "figures"),
-                ],
-                check=True,
-            )
+            for index, page in enumerate(pages(breakdown), 1):
+                page_path = output / f"profile-breakdown-p{index:02}.json"
+                page_path.write_text(json.dumps(page, indent=2) + "\n")
+                subprocess.run(
+                    [
+                        args.render_python,
+                        str(renderer),
+                        str(page_path),
+                        "--output-dir",
+                        str(output / "figures"),
+                    ],
+                    check=True,
+                )
         metadata["status"] = "completed"
     except BaseException as error:
         metadata["status"] = "failed"

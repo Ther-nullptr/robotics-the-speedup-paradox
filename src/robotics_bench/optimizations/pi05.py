@@ -31,6 +31,11 @@ def optimize_pi05(model, config):
         "projection_fusion",
         "shared_quant",
         "activation_quant_fusion",
+        "integer_grouped",
+        "integer_pack_reuse",
+        "integer_qkv",
+        "integer_gate_up",
+        "integer_group_views",
     }
     if "cuda_graph" in config.enabled and "flow_loop" not in config.enabled:
         raise ValueError(
@@ -81,6 +86,11 @@ def optimize_pi05(model, config):
                     config.precision,
                     scopes=tuple(getattr(config, "scopes", ("text",))),
                     shared_quant="shared_quant" in config.enabled,
+                    grouped="integer_grouped" in config.enabled,
+                    pack_reuse="integer_pack_reuse" in config.enabled,
+                    group_qkv="integer_qkv" in config.enabled,
+                    group_gate_up="integer_gate_up" in config.enabled,
+                    group_views="integer_group_views" in config.enabled,
                     tactic=getattr(config, "tactic", 0),
                 )
             )
@@ -136,10 +146,10 @@ def optimize_pi05(model, config):
                         if "activation_quant_fusion" in config.enabled and hasattr(
                             module.down_proj, "forward_gelu"
                         ):
-                            return module.down_proj.forward_gelu(
-                                module.gate_proj(x).contiguous(),
-                                module.up_proj(x).contiguous(),
-                            )
+                            gate, up = module.gate_proj(x), module.up_proj(x)
+                            if "integer_group_views" not in config.enabled:
+                                gate, up = gate.contiguous(), up.contiguous()
+                            return module.down_proj.forward_gelu(gate, up)
                         return module.down_proj(
                             fused.gelu_mul(
                                 module.gate_proj(x).contiguous(),

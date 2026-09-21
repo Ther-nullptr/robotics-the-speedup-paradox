@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-PRECISION_SWITCHES = {"shared_quant", "activation_quant_fusion"}
+from robotics_bench.optimizations.config import PRECISION_SWITCHES
 
 
 def build_history(records, *, protocol, cohort, source, revision, current):

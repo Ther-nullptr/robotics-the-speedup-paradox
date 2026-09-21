@@ -40,7 +40,7 @@ python -m pip install -r tools/embodied/requirements-plot.txt
 
 Cosmos本机组合使用Transformer Engine `2.2+cu128.torch27`、NATTEN `0.21.0+cu128.torch27`。这些编译扩展必须与实际Torch/CUDA匹配；不同Python、GPU或CUDA组合需按对应项目安装和验证。模型实验目前使用RTX 6000 Ada。
 
-主要模型执行代码现位于本仓 `src/robotics_bench/models/`，默认使用 `--model-runtime owned`，但公共框架、加载器和模拟器依赖仍需配置。可选融合需要模型环境中的Triton；INT后端另外需要兼容CUTLASS checkout和CUDA开发工具链，本次Ada构建使用CUDA 12.8。路径与目标架构必须显式指定，见 [算子构建说明](../src/robotics_kernels/README.md)。FP4/FP8尚待Blackwell实机验证。逐轮图表通过外部profile-visualizer skill生成，CairoSVG/Cairo放在独立渲染环境，见 [推理实验入口](../benchmarks/inference/README.md)。
+主要模型执行代码现位于本仓 `src/robotics_bench/models/`，默认使用 `--model-runtime owned`，但公共框架、加载器和模拟器依赖仍需配置。可选融合需要模型环境中的Triton；INT源码和固定CUTLASS头文件已在本仓独立维护，构建还需本机CUDA开发工具链，本次Ada构建使用CUDA 12.8。工具链路径与目标架构必须显式指定，见 [算子构建说明](../src/robotics_kernels/README.md)。FP4/FP8尚待Blackwell实机验证。逐轮图表通过外部profile-visualizer skill生成，CairoSVG/Cairo放在独立渲染环境，见 [推理实验入口](../benchmarks/inference/README.md)。
 
 - **π0.5**：需要支持本仓参数与历史观测协议的VLASH sim evaluator，并使用普通LeRobot π0.5 LIBERO权重。现有兼容源码含本地改动，仅安装相同版本号的LeRobot不足以证明接口可用。入口通过AST预检检查evaluator字段，实际源码身份写入manifest。参见 [case依赖边界](../benchmarks/static/pi05_libero/README.md#已验证范围与外部依赖)。
 - **Cosmos**：按 [官方安装说明](https://github.com/NVlabs/cosmos-policy/blob/main/SETUP.md) 配置模型依赖，分别安装LIBERO和RoboCasa的环境栈。当前普通用户环境复用了本机已有Cosmos packages，未验证从空机器完整重建；这些复用路径不会写入公共模板。

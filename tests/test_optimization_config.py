@@ -20,6 +20,17 @@ def test_defaults_preserve_original_path():
     assert config.to_dict()["switches"] == []
 
 
+def test_expanded_tactics_and_progressive_tier_roundtrip():
+    config = api().OptimizationConfig(
+        precision="int8", scopes=("dit",), tactic=7, quant_tier=3
+    )
+    from robotics_bench.optimizations.entry import from_dict
+
+    assert from_dict(config.to_dict()) == config
+    with pytest.raises(ValueError):
+        api().OptimizationConfig(quant_tier=1)
+
+
 def test_independent_switches_and_unknowns():
     config = api().OptimizationConfig(switches=("flow_loop", "rope"))
     assert config.enabled == ("flow_loop", "rope")

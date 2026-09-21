@@ -41,6 +41,10 @@ def optimize_cosmos(model, config):
         "cuda_graph",
         "shared_quant",
         "activation_quant_fusion",
+        "integer_grouped",
+        "integer_pack_reuse",
+        "integer_qkv",
+        "integer_group_views",
     }:
         raise ValueError("Unsupported Cosmos optimization switch")
     patches = Patches()
@@ -88,6 +92,11 @@ def optimize_cosmos(model, config):
                     shared_quant="shared_quant" in config.enabled,
                     tactic=config.tactic,
                     selector=selector,
+                    grouped="integer_grouped" in config.enabled,
+                    pack_reuse="integer_pack_reuse" in config.enabled,
+                    group_qkv="integer_qkv" in config.enabled,
+                    group_views="integer_group_views" in config.enabled,
+                    site_bits=_tier_sites(model.net, selector, config.quant_tier),
                 )
             )
         if "activation_quant_fusion" in config.enabled:
@@ -153,3 +162,17 @@ def optimize_cosmos(model, config):
     finally:
         stack.close()
         patches.restore()
+
+
+def _tier_sites(model, selector, tier):
+    if tier is None:
+        return None
+    import torch
+    from .progressive import cosmos_precision_map
+
+    names = [
+        n
+        for n, m in model.named_modules()
+        if isinstance(m, torch.nn.Linear) and selector(n) == "dit"
+    ]
+    return cosmos_precision_map(names, tier)

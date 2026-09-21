@@ -1,0 +1,2 @@
+# Preserve the pinned third-party snapshot byte-for-byte, including upstream whitespace.
+src/robotics_kernels/ampere_ada/third_party/cutlass/** -whitespace
