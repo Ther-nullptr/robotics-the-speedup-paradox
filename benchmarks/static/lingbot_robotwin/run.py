@@ -1,4 +1,4 @@
-"""Offline LingBot + RoboTwin synchronous evaluation using two local environments."""
+"""Offline LingBot + RoboTwin sync/paper_async evaluation in two local environments."""
 
 from datetime import datetime, timezone
 import argparse
@@ -36,6 +36,9 @@ def load_file(path, name):
 
 common = load_file(
     ROOT / "benchmarks/static/cosmos_libero/run.py", "_lingbot_run_helpers"
+)
+protocol = load_file(
+    ROOT / "src/robotics_bench/protocols/lingbot_runner.py", "_lingbot_protocol"
 )
 
 
@@ -90,9 +93,15 @@ def build_parser():
     parser.add_argument("--max-initialization-attempts", type=int, default=32)
     parser.add_argument(
         "--schedule",
-        choices=("sync",),
+        choices=("sync", "paper_async"),
         default="sync",
-        help="Only native synchronous cache semantics are implemented",
+        help="Native sync or paper-style stale observations including KV/VAE history",
+    )
+    parser.add_argument(
+        "--overlap-actions",
+        type=int,
+        default=0,
+        help="n_prime in accepted control commands (0..16); sync requires zero",
     )
     parser.add_argument("--gpu", help="Physical GPU index used by model and simulator")
     parser.add_argument(
@@ -109,6 +118,7 @@ def build_parser():
 
 
 def build_plan(args):
+    paper = protocol.paper_async_contract(args.schedule, args.overlap_actions)
     if not args.task.isidentifier():
         raise ValueError("task must be a Python identifier")
     for name in (
@@ -198,6 +208,7 @@ def build_plan(args):
             "model_seed",
             "max_initialization_attempts",
             "schedule",
+            "overlap_actions",
             "cpu_offload",
             "record_video",
             "video_fps",
@@ -213,6 +224,7 @@ def build_plan(args):
     )
     identity = {
         "case": options,
+        "observation_protocol": paper,
         "checkpoint_files": {
             str(p.relative_to(checkpoint)): p.stat().st_size
             for p in required
@@ -247,6 +259,7 @@ def build_plan(args):
         "case_id": "lingbot_robotwin",
         "run_kind": "smoke" if args.episodes == 1 else "evaluation",
         "options": options,
+        "paper_async": paper,
         "resources": {k: str(v) for k, v in paths.items()},
         "gpu": args.gpu,
         "output_dir": str(output.resolve()),
@@ -278,6 +291,7 @@ def execute(plan):
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
     common.write_json(output / "case-manifest.json", manifest)
+    common.write_json(output / "paper-async.json", plan["paper_async"])
     environment = {
         "CUDA_VISIBLE_DEVICES": plan["gpu"],
         "HF_HUB_OFFLINE": "1",
@@ -439,6 +453,8 @@ def execute(plan):
                         simulator,
                         observation,
                         max_steps=options["max_steps"],
+                        schedule=options["schedule"],
+                        overlap_actions=options["overlap_actions"],
                         on_frame=on_frame if callback else None,
                         on_event=on_event,
                     )

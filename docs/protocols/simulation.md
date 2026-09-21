@@ -17,6 +17,8 @@
 
 `paper_async` 是独立case manifest的标签，不加入或重定义通用v1 schema的schedule枚举。π0.5＋LIBERO使用 `overlap_actions=n′`，范围 `0≤n′≤n_action_steps`，默认执行长度n为5；入口映射到外部 `eval.async_delay`。论文附录B.1规定历史观测偏移，但未规定state和warmup；本case选择 `same_snapshot`（图像和state同源）及 `current_until_available`（历史不足时取当前观测），不得将这两项工程选择归于论文。[The Speedup Paradox，§3.1与B.1](https://arxiv.org/html/2606.28529v2)
 
+[LingBot＋RoboTwin](../../benchmarks/static/lingbot_robotwin/README.md) 的有状态扩展同时延迟KV/VAE观测流：名义关键帧k取max(0,k−n′)，负索引重复初始快照，保持观测时间单调；推理边界t的最新缓存观测为t−n′。原生首块执行16条、后续32条，n′限制在0..16。预测动作缓存条件沿用原始动作块，与测量state明确区分。该case仍串行执行，指令的物理时长可变，当前不据此生成固定Tact的论文加速比；具体约定随manifest和 `paper-async.json` 记录。
+
 论文§3.1 Eq.3的周期是 `C=Tinf+n*Tact−min(Tinf,n′*Tact)`。π0.5入口将其记录为 `paper_model`；默认 `Tact=1000/30 ms` 只是解析模型假设，不修改control/physics dt。`Tinf`必须显式提供并说明来源，缺少时不生成周期或加速比。宿主 `eval_s` 是实际程序耗时，不能代替论文C；历史观测模式的质量实验可独立运行。
 
 | clock / delay mode | 推理时环境如何推进 | 延迟来源 |

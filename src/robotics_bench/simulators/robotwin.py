@@ -1,4 +1,4 @@
-"""Read-only RoboTwin source/asset adapter for the LingBot synchronous case."""
+"""Read-only RoboTwin source/asset adapter for the LingBot static case."""
 
 from copy import deepcopy
 import hashlib
