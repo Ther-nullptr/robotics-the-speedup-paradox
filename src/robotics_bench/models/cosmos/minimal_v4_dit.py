@@ -1606,14 +1606,27 @@ class Block(nn.Module):
             h=H,
             w=W,
         )
-        from robotics_bench.optimizations.cosmos import _residual
+        from robotics_bench.optimizations.cosmos import _residual, _residual_modulation
 
-        x_B_T_H_W_D = _residual(
-            x_B_T_H_W_D,
-            result_B_T_H_W_D,
-            gate_self_attn_B_T_1_1_D,
-            getattr(self, "_robotics_residual", False),
-        )
+        cross_prepared = None
+        if getattr(self, "_robotics_residual_norm_quant", False):
+            x_B_T_H_W_D, cross_prepared = _residual_modulation(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_self_attn_B_T_1_1_D,
+                self.layer_norm_cross_attn,
+                scale_cross_attn_B_T_1_1_D,
+                shift_cross_attn_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+                getattr(self, "_robotics_modulation", False),
+            )
+        else:
+            x_B_T_H_W_D = _residual(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_self_attn_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+            )
 
         def _x_fn(
             _x_B_T_H_W_D,
@@ -1622,12 +1635,14 @@ class Block(nn.Module):
             _shift_cross_attn_B_T_1_1_D,
             _gate_cross_attn_B_T_1_1_D,
         ):
-            _normalized_x_B_T_H_W_D = _fn(
-                _x_B_T_H_W_D,
-                layer_norm_cross_attn,
-                _scale_cross_attn_B_T_1_1_D,
-                _shift_cross_attn_B_T_1_1_D,
-            )
+            _normalized_x_B_T_H_W_D = cross_prepared
+            if _normalized_x_B_T_H_W_D is None:
+                _normalized_x_B_T_H_W_D = _fn(
+                    _x_B_T_H_W_D,
+                    layer_norm_cross_attn,
+                    _scale_cross_attn_B_T_1_1_D,
+                    _shift_cross_attn_B_T_1_1_D,
+                )
             _result_B_T_H_W_D = rearrange(
                 self.cross_attn(
                     _attention_input(_normalized_x_B_T_H_W_D, (B, T * H * W)),
@@ -1649,19 +1664,30 @@ class Block(nn.Module):
             shift_cross_attn_B_T_1_1_D,
             gate_cross_attn_B_T_1_1_D,
         )
-        x_B_T_H_W_D = _residual(
-            x_B_T_H_W_D,
-            result_B_T_H_W_D,
-            gate_cross_attn_B_T_1_1_D,
-            getattr(self, "_robotics_residual", False),
-        )
-
-        normalized_x_B_T_H_W_D = _fn(
-            x_B_T_H_W_D,
-            self.layer_norm_mlp,
-            scale_mlp_B_T_1_1_D,
-            shift_mlp_B_T_1_1_D,
-        )
+        if getattr(self, "_robotics_residual_norm_quant", False):
+            x_B_T_H_W_D, normalized_x_B_T_H_W_D = _residual_modulation(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_cross_attn_B_T_1_1_D,
+                self.layer_norm_mlp,
+                scale_mlp_B_T_1_1_D,
+                shift_mlp_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+                getattr(self, "_robotics_modulation", False),
+            )
+        else:
+            x_B_T_H_W_D = _residual(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_cross_attn_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+            )
+            normalized_x_B_T_H_W_D = _fn(
+                x_B_T_H_W_D,
+                self.layer_norm_mlp,
+                scale_mlp_B_T_1_1_D,
+                shift_mlp_B_T_1_1_D,
+            )
         result_B_T_H_W_D = self.mlp(normalized_x_B_T_H_W_D)
         x_B_T_H_W_D = _residual(
             x_B_T_H_W_D,

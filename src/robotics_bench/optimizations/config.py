@@ -29,6 +29,8 @@ COSMOS_HOTSPOT_SWITCHES = (
 )
 
 PRECISION_SWITCHES = {
+    "residual_norm_modulation_quant",
+    "norm_modulation_quant",
     "modulation_quant",
     "shared_quant",
     "activation_quant_fusion",
@@ -42,6 +44,8 @@ PRECISION_SWITCHES = {
 
 SWITCHES = (
     *COSMOS_HOTSPOT_SWITCHES,
+    "residual_norm_modulation_quant",
+    "norm_modulation_quant",
     "modulation_quant",
     "flow_loop",
     "mask_cache",
@@ -81,6 +85,22 @@ class OptimizationConfig:
             raise ValueError("Unknown optimization switch")
         if len(set(self.switches)) != len(self.switches):
             raise ValueError("Duplicate optimization switch")
+        if "residual_norm_modulation_quant" in self.switches and not {
+            "norm_modulation_quant",
+            "gated_residual",
+        } <= set(self.switches):
+            raise ValueError(
+                "residual_norm_modulation_quant requires norm_modulation_quant and gated_residual"
+            )
+        if "norm_modulation_quant" in self.switches and (
+            not {"modulation", "modulation_quant"} <= set(self.switches)
+            or self.precision not in ("int4", "int8")
+            or self.scopes != ("dit",)
+        ):
+            raise ValueError(
+                "norm_modulation_quant requires modulation, modulation_quant, "
+                "INT4/INT8 and the Cosmos dit scope"
+            )
         if len(set(self.switches) & ATTENTION_SWITCHES.keys()) > 1:
             raise ValueError("Choose one attention backend per configuration")
         if len(set(self.switches) & CONVOLUTION_SWITCHES.keys()) > 1:

@@ -59,6 +59,34 @@ For Cosmos use `--case cosmos_libero`, its resource variables, and appropriate
 switches: `modulation`, `gated_residual`, `cuda_graph`, and integer-specific
 `shared_quant`/`activation_quant_fusion`. Its quantization scope is `dit`.
 
+`norm_modulation_quant` additionally fuses non-affine LayerNorm with AdaLN
+modulation and activation packing. It requires `modulation`, `modulation_quant`,
+INT4 or INT8, and the `dit` scope. LIBERO and RoboCasa use the same owned kernel
+and DiT adapter; their observations, checkpoints and VAE settings stay case-specific.
+Only boundaries whose consumers are all integer projections use the fused path;
+other boundaries retain native normalization. The kernel preserves BF16 rounding
+between normalization, multiplication and addition, but its FP32 reduction order
+can differ from native LayerNorm. Treat it as a numerical candidate, not a
+guaranteed lossless switch, and inspect the recorded same-precision action drift.
+It is disabled by default. Remove only `--enable norm_modulation_quant` to return
+to native LayerNorm plus the existing modulation/packing fusion.
+
+`residual_norm_modulation_quant` further combines the preceding gated residual
+with normalization and packing at the cross-attention and MLP input boundaries.
+It requires `norm_modulation_quant` and `gated_residual`. The BF16 residual is
+still written for the later skip connection, while normalization consumes it
+directly inside the kernel. Single-format integer consumers use this path;
+mixed-format or unquantized boundaries keep the separate implementation. The
+final MLP residual stays separate. This switch shares the normalization
+candidate's numerical caveat and is also disabled by default.
+
+Add the following to an existing Cosmos INT4/INT8 command that already enables
+`modulation` and `gated_residual` to evaluate the complete fusion:
+
+```bash
+--enable modulation_quant --enable norm_modulation_quant --enable residual_norm_modulation_quant
+```
+
 Each result directory contains a manifest, repeated measurements, numerical
 checks, checkpoint audit and a skill-compatible `ledger.json`. `--profile` adds
 separate diagnostic traces/tables. With `--profile-skill`, every completed round

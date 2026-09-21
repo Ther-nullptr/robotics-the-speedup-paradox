@@ -20,6 +20,34 @@ def test_defaults_preserve_original_path():
     assert config.to_dict()["switches"] == []
 
 
+def test_norm_pack_requires_integer_dit_and_preserves_bf16_reference():
+    module = api()
+    switches = ("modulation", "modulation_quant", "norm_modulation_quant")
+    config = module.OptimizationConfig(switches, "int4", ("dit",))
+    rows = dict(module.measurement_configurations(config))
+    assert rows["optimized-bf16"].enabled == ("modulation",)
+    combined = module.OptimizationConfig(
+        (*switches, "gated_residual", "residual_norm_modulation_quant"),
+        "int4",
+        ("dit",),
+    )
+    assert dict(module.measurement_configurations(combined))[
+        "optimized-bf16"
+    ].enabled == (
+        "modulation",
+        "gated_residual",
+    )
+    with pytest.raises(ValueError, match="residual_norm_modulation_quant requires"):
+        module.OptimizationConfig(("residual_norm_modulation_quant",), "int4", ("dit",))
+    for options in (
+        dict(switches=switches, precision="bf16", scopes=("dit",)),
+        dict(switches=switches, precision="int4", scopes=("text",)),
+        dict(switches=("norm_modulation_quant",), precision="int4", scopes=("dit",)),
+    ):
+        with pytest.raises(ValueError, match="norm_modulation_quant requires"):
+            module.OptimizationConfig(**options)
+
+
 def test_expanded_tactics_and_progressive_tier_roundtrip():
     config = api().OptimizationConfig(
         precision="int8", scopes=("dit",), tactic=7, quant_tier=3

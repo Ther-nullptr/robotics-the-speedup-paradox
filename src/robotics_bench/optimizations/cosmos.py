@@ -1,4 +1,4 @@
-"""Independent Cosmos DiT switches with native normalization preserved."""
+"""Independent Cosmos DiT switches with explicit numerical boundaries."""
 
 from contextlib import contextmanager, ExitStack
 from .patching import Patches
@@ -6,22 +6,32 @@ from .config import ATTENTION_SWITCHES, CONVOLUTION_SWITCHES, COSMOS_HOTSPOT_SWI
 
 
 def _modulation(x, norm, scale, shift, enabled):
-    y = norm(x)
     formats = getattr(norm, "_robotics_quant_bits", ())
     if formats:
         from robotics_kernels.ampere_ada.modulation import (
             PackedActivations,
             prepare_modulation,
+            prepare_norm_modulation,
         )
 
         b, t, h, w, d = x.shape
         scale = scale.reshape(b * t, 1, d).contiguous()
         shift = shift.reshape(b * t, 1, d).contiguous()
-        packs = {
-            bits: prepare_modulation(y.reshape(b * t, h * w, d), scale, shift, bits)
-            for bits in formats
-        }
+        if getattr(norm, "_robotics_norm_quant", False):
+            packs = {
+                bits: prepare_norm_modulation(
+                    x.reshape(b * t, h * w, d), scale, shift, bits, eps=norm.eps
+                )
+                for bits in formats
+            }
+        else:
+            y = norm(x)
+            packs = {
+                bits: prepare_modulation(y.reshape(b * t, h * w, d), scale, shift, bits)
+                for bits in formats
+            }
         return PackedActivations(packs).with_leading_shape(x.shape[:-1])
+    y = norm(x)
     if not enabled:
         return y * (1 + scale) + shift
     from robotics_kernels.fused import modulate
@@ -38,6 +48,33 @@ def _attention_input(value, leading_shape):
     if getattr(value, "_robotics_packed_input", False):
         return value.with_leading_shape(leading_shape)
     return value.reshape(*leading_shape, value.shape[-1])
+
+
+def _residual_modulation(
+    x, y, gate, norm, scale, shift, residual_enabled, modulation_enabled
+):
+    formats = getattr(norm, "_robotics_quant_bits", ())
+    if getattr(norm, "_robotics_norm_quant", False) and len(formats) == 1:
+        from robotics_kernels.ampere_ada.modulation import (
+            PackedActivations,
+            prepare_residual_norm_modulation,
+        )
+
+        b, t, h, w, d = x.shape
+        result, packed = prepare_residual_norm_modulation(
+            x.reshape(b * t, h * w, d),
+            y.reshape(b * t, h * w, d).contiguous(),
+            gate.reshape(b * t, 1, d),
+            scale.reshape(b * t, 1, d),
+            shift.reshape(b * t, 1, d),
+            formats[0],
+            eps=norm.eps,
+        )
+        return result.reshape_as(x), PackedActivations(
+            {formats[0]: packed}
+        ).with_leading_shape(x.shape[:-1])
+    result = _residual(x, y, gate, residual_enabled)
+    return result, _modulation(result, norm, scale, shift, modulation_enabled)
 
 
 def _residual(x, y, gate, enabled):
@@ -70,6 +107,8 @@ def optimize_cosmos(model, config):
         "integer_group_views",
         "integer_biasless",
         "modulation_quant",
+        "norm_modulation_quant",
+        "residual_norm_modulation_quant",
     }:
         raise ValueError("Unsupported Cosmos optimization switch")
     patches = Patches()
@@ -215,6 +254,11 @@ def optimize_cosmos(model, config):
             for name, module in model.net.named_modules():
                 if not isinstance(module, dit.Block):
                     continue
+                patches.set(
+                    module,
+                    "_robotics_residual_norm_quant",
+                    "residual_norm_modulation_quant" in config.enabled,
+                )
                 boundaries = (
                     (
                         "layer_norm_self_attn",
@@ -233,13 +277,34 @@ def optimize_cosmos(model, config):
                         for m in consumers
                     ):
                         formats = tuple(sorted({m.bits for m in consumers}))
-                        patches.set(
-                            getattr(module, norm_name), "_robotics_quant_bits", formats
-                        )
+                        norm = getattr(module, norm_name)
+                        fuse_norm = "norm_modulation_quant" in config.enabled
+                        if fuse_norm and (
+                            type(norm) is not torch.nn.LayerNorm
+                            or norm.elementwise_affine
+                            or tuple(norm.normalized_shape) != (module.x_dim,)
+                            or norm.training
+                        ):
+                            raise ValueError(
+                                "Norm packing requires an eval non-affine LayerNorm"
+                            )
+                        patches.set(norm, "_robotics_quant_bits", formats)
+                        if fuse_norm:
+                            patches.set(norm, "_robotics_norm_quant", True)
                         report["coverage"][name + "." + norm_name + ".quant"] = {
                             "formats": list(formats),
-                            "backend": "fused_modulation_pack",
+                            "backend": "fused_norm_modulation_pack"
+                            if fuse_norm
+                            else "fused_modulation_pack",
                         }
+                        if (
+                            "residual_norm_modulation_quant" in config.enabled
+                            and norm_name != "layer_norm_self_attn"
+                            and len(formats) == 1
+                        ):
+                            report["coverage"][name + "." + norm_name + ".quant"][
+                                "backend"
+                            ] = "fused_residual_norm_modulation_pack"
         cross_cache = None
         if "cross_kv_cache" in config.enabled:
             from .cosmos_kv_cache import cache_cross_attention

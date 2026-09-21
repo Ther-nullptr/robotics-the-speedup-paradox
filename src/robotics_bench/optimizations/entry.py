@@ -50,12 +50,21 @@ def configuration(args, model="pi05"):
     ):
         raise ValueError("Integer preparation switches require int8 or int4 precision")
     allowed = (
-        set(SWITCHES) - {"modulation", "modulation_quant", *COSMOS_HOTSPOT_SWITCHES}
+        set(SWITCHES)
+        - {
+            "modulation",
+            "modulation_quant",
+            "norm_modulation_quant",
+            "residual_norm_modulation_quant",
+            *COSMOS_HOTSPOT_SWITCHES,
+        }
         if model == "pi05"
         else {
             *COSMOS_HOTSPOT_SWITCHES,
             "modulation",
             "modulation_quant",
+            "norm_modulation_quant",
+            "residual_norm_modulation_quant",
             "gated_residual",
             "cuda_graph",
             "shared_quant",

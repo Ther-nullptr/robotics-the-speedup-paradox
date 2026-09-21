@@ -11,8 +11,9 @@ from .integer import PackedActivation
 
 
 @triton.jit
-def _prepare_modulation(
-    X,
+def _pack_modulated_row(
+    x,
+    row,
     SCALE,
     SHIFT,
     Q,
@@ -23,10 +24,8 @@ def _prepare_modulation(
     BITS: tl.constexpr,
     BLOCK: tl.constexpr,
 ):
-    row = tl.program_id(0)
     index = tl.arange(0, BLOCK)
     valid = index < K
-    x = tl.load(X + row * K + index, valid, 0)
     offset = row // TOKENS * K + index
     scale = tl.load(SCALE + offset, valid, 0).to(tl.float32)
     shift = tl.load(SHIFT + offset, valid, 0).to(tl.float32)
@@ -48,7 +47,128 @@ def _prepare_modulation(
         tl.store(Q + row * (PAD // 2) + pair_index, packed, pair_index < PAD // 2)
 
 
+@triton.jit
+def _prepare_modulation(
+    X,
+    SCALE,
+    SHIFT,
+    Q,
+    S,
+    K: tl.constexpr,
+    PAD: tl.constexpr,
+    TOKENS: tl.constexpr,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    index = tl.arange(0, BLOCK)
+    x = tl.load(X + row * K + index, index < K, 0)
+    _pack_modulated_row(x, row, SCALE, SHIFT, Q, S, K, PAD, TOKENS, BITS, BLOCK)
+
+
+@triton.jit
+def _normalize_pack_row(
+    x,
+    row,
+    SCALE,
+    SHIFT,
+    Q,
+    S,
+    K: tl.constexpr,
+    PAD: tl.constexpr,
+    TOKENS: tl.constexpr,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    EPS: tl.constexpr,
+):
+    index = tl.arange(0, BLOCK)
+    valid = index < K
+    value = x.to(tl.float32)
+    mean = tl.sum(value, 0) / K
+    centered = tl.where(valid, value - mean, 0.0)
+    variance = tl.sum(centered * centered, 0) / K
+    # Match the native materialized BF16 boundary before modulation. Reduction
+    # order still differs from native LayerNorm; this is not bitwise guaranteed.
+    normalized = (centered * tl.rsqrt(variance + EPS)).to(x.dtype)
+    _pack_modulated_row(
+        normalized, row, SCALE, SHIFT, Q, S, K, PAD, TOKENS, BITS, BLOCK
+    )
+
+
+@triton.jit
+def _prepare_norm_modulation(
+    X,
+    SCALE,
+    SHIFT,
+    Q,
+    S,
+    K: tl.constexpr,
+    PAD: tl.constexpr,
+    TOKENS: tl.constexpr,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    EPS: tl.constexpr,
+):
+    row = tl.program_id(0)
+    index = tl.arange(0, BLOCK)
+    x = tl.load(X + row * K + index, index < K, 0)
+    _normalize_pack_row(x, row, SCALE, SHIFT, Q, S, K, PAD, TOKENS, BITS, BLOCK, EPS)
+
+
+@triton.jit
+def _prepare_residual_norm_modulation(
+    X,
+    SCALE,
+    SHIFT,
+    Q,
+    S,
+    K: tl.constexpr,
+    PAD: tl.constexpr,
+    TOKENS: tl.constexpr,
+    BITS: tl.constexpr,
+    BLOCK: tl.constexpr,
+    EPS: tl.constexpr,
+    Y,
+    GATE,
+    RESIDUAL,
+):
+    row = tl.program_id(0)
+    index = tl.arange(0, BLOCK)
+    valid = index < K
+    x = tl.load(X + row * K + index, valid, 0)
+    y = tl.load(Y + row * K + index, valid, 0).to(tl.float32)
+    gate = tl.load(GATE + row // TOKENS * K + index, valid, 0).to(tl.float32)
+    product = (y * gate).to(x.dtype).to(tl.float32)
+    residual = (x.to(tl.float32) + product).to(x.dtype)
+    tl.store(RESIDUAL + row * K + index, residual, valid)
+    _normalize_pack_row(
+        residual, row, SCALE, SHIFT, Q, S, K, PAD, TOKENS, BITS, BLOCK, EPS
+    )
+
+
 def prepare_modulation(x, scale, shift, bits):
+    return _prepare(x, scale, shift, bits)
+
+
+def prepare_norm_modulation(x, scale, shift, bits, *, eps):
+    """Fuse non-affine LayerNorm into packing; FP32 reduction order may differ."""
+    if eps is None:
+        raise ValueError("LayerNorm epsilon must be finite and positive")
+    return _prepare(x, scale, shift, bits, eps=eps)
+
+
+def prepare_residual_norm_modulation(x, y, gate, scale, shift, bits, *, eps):
+    """Return the exact BF16 residual and its fused normalized integer pack."""
+    if eps is None:
+        raise ValueError("LayerNorm epsilon must be finite and positive")
+    return _prepare(x, scale, shift, bits, eps=eps, residual=(y, gate))
+
+
+def _prepare(x, scale, shift, bits, *, eps=None, residual=None):
+    if eps is not None:
+        if not isinstance(eps, (int, float)) or not math.isfinite(eps) or eps <= 0:
+            raise ValueError("LayerNorm epsilon must be finite and positive")
+        eps = float(eps)
     if (
         bits not in (4, 8)
         or x.ndim != 3
@@ -72,6 +192,20 @@ def prepare_modulation(x, scale, shift, bits):
                 "Modulation scale and shift must match B,1,D, dtype and device"
             )
     scale, shift = scale.contiguous(), shift.contiguous()
+    if residual is not None:
+        y, gate = residual
+        if (
+            y.shape != x.shape
+            or y.dtype != x.dtype
+            or y.device != x.device
+            or not y.is_contiguous()
+            or gate.shape != (b, 1, k)
+            or gate.dtype != x.dtype
+            or gate.device != x.device
+        ):
+            raise ValueError("Residual operands must match BF16 input and B,1,D gate")
+        gate = gate.contiguous()
+        residual_out = torch.empty_like(x)
     rows, padded = b * tokens, triton.cdiv(k, 128) * 128
     data = torch.empty(
         (rows, padded if bits == 8 else padded // 2),
@@ -80,7 +214,12 @@ def prepare_modulation(x, scale, shift, bits):
     )
     scales = torch.empty(rows, device=x.device, dtype=torch.float32)
     with torch.cuda.device(x.device):
-        _prepare_modulation[(rows,)](
+        kernel = _prepare_modulation if eps is None else _prepare_norm_modulation
+        extra = {} if eps is None else {"EPS": eps}
+        if residual is not None:
+            kernel = _prepare_residual_norm_modulation
+            extra.update(Y=y, GATE=gate, RESIDUAL=residual_out)
+        kernel[(rows,)](
             x,
             scale,
             shift,
@@ -93,8 +232,10 @@ def prepare_modulation(x, scale, shift, bits):
             triton.next_power_of_2(padded),
             num_warps=4 if padded <= 2048 else 8,
             enable_fp_fusion=False,
+            **extra,
         )
-    return PackedActivation(data, scales, (b, tokens), k, bits)
+    packed = PackedActivation(data, scales, (b, tokens), k, bits)
+    return packed if residual is None else (residual_out, packed)
 
 
 @dataclass

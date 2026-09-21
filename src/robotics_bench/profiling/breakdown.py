@@ -36,6 +36,10 @@ def category(event):
         return "Attention and softmax"
     if name.startswith("_vae_norm_affine"):
         return "VAE pointwise fusion"
+    if name.startswith("_prepare_norm_modulation"):
+        return "Normalization modulation and quantization fusion"
+    if name.startswith("_prepare_residual_norm_modulation"):
+        return "Residual normalization modulation and quantization fusion"
     if name.startswith("_prepare_modulation"):
         return "Modulation and quantization fusion"
     if name.startswith("_prepare") or "quantize" in name:
