@@ -92,3 +92,8 @@ bash benchmarks/static/cosmos_robocasa/run.sh \
 `--integer-tactic`，量化范围固定为 `--quant-scope dit`。默认优化关闭。
 与 LIBERO 的 kernel/模型代码共享不代表两个场景的性能或任务质量可以互相替代；
 RoboCasa 的新优化配置需要单独验证。推理工具见 [inference benchmark](../../inference/README.md)。
+
+固定输入计时支持 `--case cosmos_robocasa`，使用RoboCasa专用资源变量和H=32；
+可通过 `benchmarks/inference/capture_robocasa.py` 捕获真实三相机观测，再比较
+BF16、INT8、INT4以及独立卷积、VAE逐元素融合、DiT attention后端开关。
+这些开关默认关闭，完整调用计时不含模拟器推进；模型任务质量需单独闭环验证。

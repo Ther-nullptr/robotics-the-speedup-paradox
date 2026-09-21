@@ -21,6 +21,12 @@ import pytest
         ("elementwise_kernel direct_copy_kernel_cuda", "Copies and dtype conversions"),
         ("vectorized_layer_norm_kernel", "Normalization and reductions"),
         ("CatArrayBatchedCopy", "Copies and dtype conversions"),
+        ("_vae_norm_affine", "VAE pointwise fusion"),
+        ("fmha_cutlassF_bf16_aligned", "Attention and softmax"),
+        (
+            "distribution_elementwise normal_and_transform",
+            "Other elementwise arithmetic",
+        ),
     ],
 )
 def test_separates_actual_integer_compute_and_surrounding_work(name, expected):

@@ -32,8 +32,10 @@ def category(event):
         ):
             return "Floating matrix multiplication"
         return "Matrix multiplication"
-    if "flash" in name or "softmax" in name:
+    if "flash" in name or "softmax" in name or "fmha" in name:
         return "Attention and softmax"
+    if name.startswith("_vae_norm_affine"):
+        return "VAE pointwise fusion"
     if name.startswith("_prepare_modulation"):
         return "Modulation and quantization fusion"
     if name.startswith("_prepare") or "quantize" in name:
@@ -41,7 +43,7 @@ def category(event):
     if name in ("_rope", "_residual", "_modulate", "_norm_affine", "_gelu_mul"):
         return "Owned pointwise fusion"
     if (
-        "norm" in name
+        any(token in name for token in ("layer_norm", "layernorm", "rmsnorm", "_norm_"))
         or "reduce_kernel" in name
         or "rsqrt" in name
         or "pow_tensor_scalar" in name

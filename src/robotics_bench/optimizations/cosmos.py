@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager, ExitStack
 from .patching import Patches
+from .config import ATTENTION_SWITCHES, CONVOLUTION_SWITCHES, COSMOS_HOTSPOT_SWITCHES
 
 
 def _modulation(x, norm, scale, shift, enabled):
@@ -57,6 +58,7 @@ def optimize_cosmos(model, config):
     from robotics_bench.models.cosmos import minimal_v4_dit as dit
 
     if set(config.enabled) - {
+        *COSMOS_HOTSPOT_SWITCHES,
         "modulation",
         "gated_residual",
         "cuda_graph",
@@ -78,6 +80,47 @@ def optimize_cosmos(model, config):
         "coverage": {},
     }
     try:
+        import torch
+
+        report["cudnn"] = {
+            name: getattr(torch.backends.cudnn, name, None)
+            for name in (
+                "enabled",
+                "benchmark",
+                "benchmark_limit",
+                "deterministic",
+                "allow_tf32",
+            )
+        }
+        for switch, backend in ATTENTION_SWITCHES.items():
+            if switch in config.enabled:
+                from .cosmos_attention import cosmos_attention_backend
+
+                report["attention"] = stack.enter_context(
+                    cosmos_attention_backend(model.net, backend)
+                )
+        if "vae_norm_fusion" in config.enabled:
+            from .cosmos_pointwise import optimize_vae_pointwise
+
+            report["vae_pointwise"] = stack.enter_context(
+                optimize_vae_pointwise(
+                    model.tokenizer.model.model,
+                    fuse_silu="vae_silu_fusion" in config.enabled,
+                )
+            )
+        for switch, tactic in CONVOLUTION_SWITCHES.items():
+            if switch in config.enabled:
+                from .cosmos_convolution import optimize_convolutions
+
+                report["convolution"] = stack.enter_context(
+                    optimize_convolutions(
+                        model.tokenizer.model.model,
+                        tactic=tactic,
+                        policy="c96"
+                        if switch.startswith("conv_cutlass_c96")
+                        else "all_supported",
+                    )
+                )
         if "modulation_quant" in config.enabled and (
             not config.precision.startswith("int") or "modulation" not in config.enabled
         ):

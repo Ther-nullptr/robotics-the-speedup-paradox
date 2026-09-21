@@ -31,11 +31,20 @@ from robotics_bench.profiling.history import build_history  # noqa:E402
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    p.add_argument("--case", choices=("pi05_libero", "cosmos_libero"), required=True)
+    p.add_argument(
+        "--case",
+        choices=("pi05_libero", "cosmos_libero", "cosmos_robocasa"),
+        required=True,
+    )
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--task", required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--gpu", required=True)
+    p.add_argument(
+        "--cudnn-benchmark",
+        action="store_true",
+        help="Enable cuDNN search before model loading for this whole process/cohort",
+    )
     p.add_argument(
         "--ablate-shared",
         action="store_true",
@@ -108,6 +117,28 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def cosmos_engine_options(args):
+    suite = args.case.removeprefix("cosmos_")
+    if suite not in ("libero", "robocasa"):
+        raise ValueError("Expected a Cosmos inference case")
+    prefix = "ROBOTICS_COSMOS" + ("_ROBOCASA" if suite == "robocasa" else "")
+    return {
+        "source": resource(args, "cosmos_source", "ROBOTICS_COSMOS_SOURCE"),
+        **{
+            key: resource(args, key, prefix + "_" + key.upper())
+            for key in (
+                "checkpoint",
+                "dataset_stats",
+                "text_embeddings",
+                "vae_checkpoint",
+            )
+        },
+        "suite": suite,
+        "action_horizon": 32 if suite == "robocasa" else 16,
+        "num_inference_steps": args.steps or 5,
+    }
+
+
 def load_runner(args, output):
     import torch
 
@@ -164,16 +195,8 @@ def load_runner(args, output):
     from robotics_bench.models.cosmos.runtime import bind_owned_runtime
     from robotics_bench.optimizations.cosmos import optimize_cosmos
 
-    source = resource(args, "cosmos_source", "ROBOTICS_COSMOS_SOURCE")
-    checkpoint = resource(args, "checkpoint", "ROBOTICS_COSMOS_CHECKPOINT")
-    engine = CosmosEngine(
-        source,
-        checkpoint,
-        resource(args, "dataset_stats", "ROBOTICS_COSMOS_DATASET_STATS"),
-        resource(args, "text_embeddings", "ROBOTICS_COSMOS_TEXT_EMBEDDINGS"),
-        resource(args, "vae_checkpoint", "ROBOTICS_COSMOS_VAE_CHECKPOINT"),
-        num_inference_steps=args.steps or 5,
-    )
+    options = cosmos_engine_options(args)
+    engine = CosmosEngine(**options)
     engine.load([args.task], output / "checkpoint-load.json")
     bindings = bind_owned_runtime(engine._model)
     from robotics_bench.models.cosmos import cosmos_utils
@@ -185,9 +208,11 @@ def load_runner(args, output):
         lambda c: optimize_cosmos(engine._model, c),
         engine.close,
         {
-            "checkpoint": str(checkpoint),
+            "checkpoint": str(options["checkpoint"]),
             "steps": args.steps or 5,
-            "horizon": 16,
+            "horizon": engine.action_horizon,
+            "suite": engine.suite,
+            "image_keys": list(engine.image_keys),
             "runtime": "owned",
             "owned_bindings": bindings,
         },
@@ -240,6 +265,7 @@ def main(argv=None):
     import torch
     import numpy as np
 
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark
     inputs = []
     for path in [args.input, *args.validation_input]:
         path = path.expanduser().resolve()
@@ -264,14 +290,28 @@ def main(argv=None):
             for p in [args.input, *args.validation_input]
         ],
         "source_sha256": source_hashes,
+        "driver_sha256": digest(Path(__file__)),
         "git_head": git_head,
         "git_status": subprocess.check_output(
             ["git", "-C", str(ROOT), "status", "--porcelain"], text=True
         ),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
+        "cudnn": {
+            key: getattr(torch.backends.cudnn, key, None)
+            for key in (
+                "enabled",
+                "benchmark",
+                "benchmark_limit",
+                "deterministic",
+                "allow_tf32",
+            )
+        },
         "gpu": torch.cuda.get_device_name(0),
         "gpu_selector": args.gpu,
+        "gpu_uuid": str(
+            getattr(torch.cuda.get_device_properties(0), "uuid", "unavailable")
+        ),
         "cpu_threads": torch.get_num_threads(),
         "warmup": args.warmup,
         "repeats": args.repeats,
@@ -454,6 +494,7 @@ def main(argv=None):
                 "selector": args.gpu,
                 "torch": torch.__version__,
                 "cpu_threads": metadata["cpu_threads"],
+                "cudnn": metadata["cudnn"],
             },
             "metric": {
                 "name": "Complete policy service",

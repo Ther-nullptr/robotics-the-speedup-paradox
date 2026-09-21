@@ -5,6 +5,25 @@ import math
 import re
 from statistics import median
 from robotics_kernels.ampere_ada.tactics import TACTIC_IDS
+from robotics_kernels.ampere_ada.convolution import TACTICS as CONVOLUTION_TACTICS
+
+ATTENTION_SWITCHES = {
+    "attention_sdpa_flash": "sdpa_flash",
+    "attention_sdpa_efficient": "sdpa_efficient",
+    "attention_sdpa_math": "sdpa_math",
+    "attention_flash_attn": "flash_attn",
+}
+CONVOLUTION_SWITCHES = {
+    **{f"conv_cutlass_{tactic}": tactic for tactic in CONVOLUTION_TACTICS},
+    **{f"conv_cutlass_c96_{tactic}": tactic for tactic in CONVOLUTION_TACTICS},
+    "conv_cutlass_c96": 0,
+}
+COSMOS_HOTSPOT_SWITCHES = (
+    *ATTENTION_SWITCHES,
+    *CONVOLUTION_SWITCHES,
+    "vae_norm_fusion",
+    "vae_silu_fusion",
+)
 
 PRECISION_SWITCHES = {
     "modulation_quant",
@@ -19,6 +38,7 @@ PRECISION_SWITCHES = {
 }
 
 SWITCHES = (
+    *COSMOS_HOTSPOT_SWITCHES,
     "modulation_quant",
     "flow_loop",
     "mask_cache",
@@ -58,6 +78,15 @@ class OptimizationConfig:
             raise ValueError("Unknown optimization switch")
         if len(set(self.switches)) != len(self.switches):
             raise ValueError("Duplicate optimization switch")
+        if len(set(self.switches) & ATTENTION_SWITCHES.keys()) > 1:
+            raise ValueError("Choose one attention backend per configuration")
+        if len(set(self.switches) & CONVOLUTION_SWITCHES.keys()) > 1:
+            raise ValueError("Choose one convolution tactic per configuration")
+        if (
+            "vae_silu_fusion" in self.switches
+            and "vae_norm_fusion" not in self.switches
+        ):
+            raise ValueError("vae_silu_fusion requires vae_norm_fusion")
         if not self.scopes or any(
             s not in ("text", "expert", "vision", "projector", "dit")
             for s in self.scopes

@@ -7,8 +7,8 @@
 
 ```text
 robotics_kernels/
-  ampere_ada/     SM80兼容的INT4/INT8包装、准备和调优配置
-    csrc/        整数CUTLASS实现
+  ampere_ada/     SM80兼容的整数与BF16卷积包装、准备和调优配置
+    csrc/        INT4/INT8 GEMM与BF16 CUTLASS卷积实现
     third_party/cutlass/ 固定版本的构建头文件与许可证
   blackwell/     独立FP4/FP8及其CUDA源码
   common/        跨架构Triton融合、CUDA Graph和浮点投影工具
@@ -28,6 +28,8 @@ Ampere和Ada共用同一个整数内核实现，显式tactic负责形状调优�
 | `projections.py` | 加载时 QKV/Gate-Up 权重合并与输出切片 | BF16 合并可能改变 GEMM 舍入；不列入已验证无损配置 |
 | `graph.py` | 输入刷新、输出复制、目标设备 capture stream、失败恢复和常量所有权 | 每个实例串行调用；权重在上下文内不可变 |
 | `blackwell/` | 保留 FP4、tensor FP8、MXFP8、相关 mixed-input 及 CuTe 实现 | 独立来源记录；Blackwell 编译/模型性能尚待实机验证 |
+| `ampere_ada/convolution.py` | 仓内CUTLASS 2D/3D卷积，8个显式tactic，权重预打包、布局处理与bias epilogue | Ada实测；近似数值，不是无损替换；不支持的模块保持native并记录 |
+| `common/vae.py` | 保留原生通道归约，融合后续除法、scale、affine和可选SiLU | BF16逐值GPU检查及RoboCasa固定输入检查；不代表全任务集质量 |
 
 INT 的公开包装遵循 `from_linear → pack_input → forward_packed/forward` 生命周期。
 `forward_gelu` 将 GELU 或 gated GELU 与 activation pack 融合。激活按行、权重按输出
@@ -54,6 +56,10 @@ INT 的公开包装遵循 `from_linear → pack_input → forward_packed/forward
 
 目前量化迭代优先Cosmos，π0.5先限于text/LLM。动作专家/diffusion量化暂缓；
 已有可选scope不表示通过了相应任务质量验收。
+
+卷积的CUTLASS迭代器、分块、流水线与数值边界见
+[CONVOLUTION.md](ampere_ada/CONVOLUTION.md)。单算子调优收益必须回到完整policy复核；
+当前卷积与attention替换均保留独立实验开关，不自动替换默认后端。
 
 INT后端使用架构目录内的CUTLASS头文件副本，固定revision为
 `982748aa7356fa838c2ea4994ddcb0b2a4b4cefa`，来源及逐文件哈希见

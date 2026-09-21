@@ -2,7 +2,13 @@
 
 from contextlib import contextmanager, ExitStack
 from types import FunctionType
-from .config import OptimizationConfig, SWITCHES, TACTIC_IDS, PRECISION_SWITCHES
+from .config import (
+    OptimizationConfig,
+    SWITCHES,
+    TACTIC_IDS,
+    PRECISION_SWITCHES,
+    COSMOS_HOTSPOT_SWITCHES,
+)
 
 
 def add_arguments(parser):
@@ -44,9 +50,10 @@ def configuration(args, model="pi05"):
     ):
         raise ValueError("Integer preparation switches require int8 or int4 precision")
     allowed = (
-        set(SWITCHES) - {"modulation", "modulation_quant"}
+        set(SWITCHES) - {"modulation", "modulation_quant", *COSMOS_HOTSPOT_SWITCHES}
         if model == "pi05"
         else {
+            *COSMOS_HOTSPOT_SWITCHES,
             "modulation",
             "modulation_quant",
             "gated_residual",
