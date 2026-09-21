@@ -23,6 +23,7 @@ COSMOS_HOTSPOT_SWITCHES = (
     *CONVOLUTION_SWITCHES,
     "vae_norm_fusion",
     "vae_silu_fusion",
+    "vae_spatial_padding",
 )
 
 PRECISION_SWITCHES = {

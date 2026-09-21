@@ -92,6 +92,13 @@ def optimize_cosmos(model, config):
                 "allow_tf32",
             )
         }
+        if "vae_spatial_padding" in config.enabled:
+            from .cosmos_vae_memory import optimize_vae_spatial_padding
+
+            # Enter before any CUTLASS weight plan snapshots module.padding.
+            report["vae_spatial_padding"] = stack.enter_context(
+                optimize_vae_spatial_padding(model.tokenizer.model.model.encoder)
+            )
         for switch, backend in ATTENTION_SWITCHES.items():
             if switch in config.enabled:
                 from .cosmos_attention import cosmos_attention_backend
