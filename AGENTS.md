@@ -60,4 +60,4 @@ INT实现参照本仓独立FP副本的loader/Linear/pack/prepare/forward_packed�
 
 ## LingBot＋RoboTwin
 
-LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。模型和仿真使用独立本地环境；当前只支持原生同步cache协议，禁止把WebSocket async命名当成paper_async。首次执行16条指令，后续完整块32条，每4条采样实际观测更新KV/VAE；终止/预算截断不更新未执行动作。`primitive_steps` 是RoboTwin接受的take_action指令数，不是250Hz物理tick。此入口默认复用显式提供的本地checkpoint、模拟器资产和环境；执行时不自动下载，输出写入调用者目录，不修改共享资源。
+LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。模型和仿真使用独立本地环境；支持sync和paper_async；禁止把WebSocket async命名当成论文抽象。paper_async的n′范围0..16，每个名义关键帧k使用max(0,k−n′)的完整快照，负索引重复初始帧；原始预测动作缓存条件保持原位。不得只延迟推理请求而让KV/VAE读取较新的观测。首次执行16条指令，后续完整块32条，每4条采样实际观测更新KV/VAE；终止/预算截断不更新未执行动作。`primitive_steps` 是RoboTwin接受的take_action指令数，不是250Hz物理tick。此入口默认复用显式提供的本地checkpoint、模拟器资产和环境；执行时不自动下载，输出写入调用者目录，不修改共享资源。

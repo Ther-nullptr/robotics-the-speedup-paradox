@@ -1,6 +1,6 @@
-# LingBot-VA＋RoboTwin 同步实验
+# LingBot-VA＋RoboTwin 静态实验
 
-本case优先适配RoboTwin双臂任务。模型在独立Python worker中运行，仿真端通过本机WebSocket调用；保留LingBot的条件帧、动作块和KV/VAE缓存更新语义。当前支持单环境同步评估，默认任务为 `adjust_bottle`，不提供 `paper_async` 或量化选项。
+本case优先适配RoboTwin双臂任务。模型在独立Python worker中运行，仿真端通过本机WebSocket调用；保留LingBot的条件帧、动作块和KV/VAE缓存更新节奏。支持单环境 `sync` 和 `paper_async` 评估，默认任务为 `adjust_bottle`；量化尚未接入。
 
 ## 本地资源与环境
 
@@ -42,6 +42,12 @@ bash benchmarks/static/lingbot_robotwin/run.sh \
   --task adjust_bottle --episodes 1 --start-seed 10000 --model-seed 0 \
   --gpu 3 --record-video \
   --output-dir runs/static/lingbot_robotwin/trial-001
+
+# Paper-style observation delay, including the model's KV/VAE history.
+bash benchmarks/static/lingbot_robotwin/run.sh \
+  --task adjust_bottle --episodes 1 --start-seed 10000 --model-seed 0 \
+  --schedule paper_async --overlap-actions 2 --gpu 3 --record-video \
+  --output-dir runs/static/lingbot_robotwin/paper-async-001
 ```
 
 `--model-python`、`--lingbot-source`、`--robotwin-source`、`--checkpoint` 可以覆盖env中的路径。shell入口使用 `ROBOTICS_ROBOTWIN_PYTHON` 启动仿真客户端。两个进程使用同一个显式GPU索引，通信端口自动选择；不连接未经声明的外部模型服务。
@@ -58,7 +64,7 @@ bash benchmarks/static/lingbot_robotwin/run.sh \
 → reset模型缓存与本回合模型随机种子
 → 推理动作块
 → 逐条执行双臂末端动作，检查成功和预算
-→ 完整块每4条指令取一组真实观测，更新KV/VAE缓存
+→ 完整块每4条指令选一组真实历史观测，更新KV/VAE缓存
 → 下一块；成功或预算耗尽立即结束
 ```
 
@@ -68,29 +74,52 @@ bash benchmarks/static/lingbot_robotwin/run.sh \
 
 场景选择沿用RoboTwin的expert筛选，记录每个候选与接受的种子；这不筛掉模型失败回合。`--episodes` 为总评估回合数，下一回合从上一个接受种子的后一位继续搜索。最多搜索 `--max-initialization-attempts` 个候选，默认32，避免初始化无限重试。
 
-`paper_async` 暂不开放：后续延迟协议必须同时限定KV/VAE缓存可见的观测，不能只延迟当前输入。当前原生WebSocket server的async命名也不表示论文的n′实验已接入。
+## 论文异步与缓存可见性
+
+`--schedule paper_async --overlap-actions n′` 使用 [The Speedup Paradox](../../../docs/protocols/simulation.md) 的历史观测抽象，宿主控制循环仍串行。`n′` 的单位是被接受的控制指令，范围为0到16；上限取首块实际执行的16条，保证延迟不超过任意动作块。`sync` 要求n′=0，`paper_async` 的n′=0与同步采用相同观测和动作路径。
+
+在推理边界t，选择t−n′的完整快照；首次推理历史不足，使用当前第0步。LingBot从第二轮开始通过KV/VAE缓存读取视觉历史，传给 `infer_chunk` 的单张图并非新的视觉输入，因此还必须移动整个缓存观测流：名义关键帧k选择 `max(0, k−n′)` 的真实观测。三相机与测量state始终同源。k−n′为负时重复初始快照，避免先写入新帧再回退到更旧帧；这是本case的显式缓存初始化约定。
+
+| n′=2 | 名义关键帧 | 实际观测来源 | 下一次推理边界 |
+| --- | --- | --- | --- |
+| 首块缓存 | 4、8、12、16 | 2、6、10、14 | t=16，最新观测14 |
+| 第二块缓存 | 20、24、…、48 | 18、22、…、46 | t=48，最新观测46 |
+
+首块仍传4帧，后续传8帧，VAE/KV的原生槽位和动作执行顺序保持一致。缓存的 `state` RPC字段沿用原始预测动作块，含首个条件帧；这些命令在执行该块之前已经生成，并不是测量的机器人state。延迟真实观测不应把预测动作替换成不同坐标或含义的测量值。该缓存扩展是本仓对有状态模型的工程定义，不声称论文规定了这套KV/VAE处理。
+
+`requests.jsonl` 中推理记录包含 `observation_step`、`history_offset_steps`、`cache_observation_max_step`；缓存记录包含 `nominal_keyframe_steps` 和 `observation_steps`。可据此检查历史足够时的偏移恰为n′，且缓存没有看到t−n′之后的观测。录像仍采集当前机器人完整动作，不随输入延迟。终止/预算截断不再更新缓存。
+
+协议写入manifest和 `paper-async.json`。RoboTwin每条控制指令的物理执行时长可变，目前没有固定Tact或校准后的Tinf，所以不生成论文周期/加速比；不能把250Hz物理tick、15FPS视频或RPC墙钟耗时替代这些量。
 
 ## 输出与已验证结果
 
 | 文件 | 内容 |
 | --- | --- |
 | `case-manifest.json` | 配置、资源及源码身份、状态 |
+| `paper-async.json` | 延迟深度、缓存观测/动作条件约定及计时限制 |
 | `run.log` / `server.log` | 仿真/调度日志与独立模型worker日志 |
 | `checkpoint-load.json` | Transformer参数覆盖、文本embedding共享关系和模型运行信息 |
 | `initialization-000000.json` | 原生种子筛选、指令、初始末端位姿、观测指纹 |
-| `requests.jsonl` | 推理请求与缓存更新，分别记录RPC墙钟耗时 |
+| `requests.jsonl` | 推理/缓存使用的观测步号、历史偏移及各自RPC墙钟耗时 |
 | `episodes.jsonl` / `coverage.json` | 成功、实际控制指令数、预算、请求和缓存更新次数 |
 | `episode-summary.md` / `.json` | 成功率、失败预算惩罚的总体步数、仅成功步数 |
 | `videos/<task>/` | 可选完整控制指令录像，三视角横排 |
 
 视频默认关闭。`--record-video` 每条控制指令记录一帧并保留初始/终止画面，独立于模型的4步关键帧采样。默认播放15FPS，不声称与物理仿真时间等速。worker由case在结束时清理，torchrun可能在 `server.log` 输出收到SIGTERM的退出信息；以manifest与加载审计判断运行结果。
 
-已完成 RTX 6000 Ada 上的单回合同步闭环：`adjust_bottle`、`demo_clean`、原生种子10000、模型种子0，115条控制指令成功，5次模型请求、4次缓存更新；Transformer和文本编码器参数覆盖审计通过。视频为960×240、116帧。尚无50任务全量结果或推理加速比。
+已完成 RTX 6000 Ada 上的两次单回合闭环：`adjust_bottle`、`demo_clean`、原生种子10000、模型种子0，预算400条。同步与异步的初始观测哈希、末端位姿、指令、种子和预算一致；Transformer和文本编码器参数覆盖审计通过。
+
+| 配置 | 结果 | 控制指令 | 推理 / cache更新 | 视频帧数 |
+| --- | --- | ---: | --- | ---: |
+| 已有sync记录 | 成功 | 115 | 5 / 4 | 116 |
+| paper_async n′=2 | 成功 | 120 | 5 / 4 | 121 |
+
+异步的全部推理/缓存事件通过观测来源核对，推理边界0、16、48、80、112对应最新观测0、14、46、78、110。两段视频均为960×240、15FPS。新增协议检查覆盖零延迟、非4步倍数偏移、初始填充、可变观测缓冲隔离和终止/预算截断；CPU检查641 passed、3个可选GPU测试模块跳过。GPU结果仅验证单场景接入，尚无50任务全量结果或推理加速比；不能把115/120的步数比解释成时间加速比。
 
 ## English summary
 
 This case prioritizes RoboTwin and runs LingBot in a separate local model environment. Resources are local-only and model loading is offline. Configure the five paths in `paths.env.example`, run preflight, then select an idle GPU explicitly.
 
-The native synchronous protocol executes 16 commands from the initial conditional chunk and 32 from subsequent full chunks, then updates KV/VAE caches from observed keyframes. Control-command counts are distinct from physics ticks. `paper_async` is intentionally unavailable until cache visibility is defined.
+The native protocol executes 16 commands from the initial conditional chunk and 32 from subsequent full chunks. `paper_async --overlap-actions N` (0..16) shifts every observed cache keyframe k to max(0, k−N), preserving all cameras and measured state in one snapshot. Initial padding keeps history monotone; generated action conditioning retains its native slots. This is an explicit stateful extension of the paper abstraction, with serial host execution. Command counts are distinct from physics ticks; no fixed-duration paper speedup is inferred.
 
-One `adjust_bottle` episode succeeded in 115 commands, with 5 inference requests, 4 cache updates and 116 recorded frames. This is a single-episode integration check, not a 50-task evaluation or speedup claim.
+Matched `adjust_bottle` episodes succeeded in 115 commands (existing sync) and 120 commands (paper_async n′=2), each with 5 inference requests and 4 cache updates. Initialization fingerprints match; all delayed observation indices were verified. These are single-scene integration checks, not a 50-task evaluation or a time-speedup claim.

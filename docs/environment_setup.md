@@ -137,6 +137,20 @@ bash benchmarks/static/pi05_libero/run.sh \
   --output-dir runs/static/pi05_libero/sync-001 --dry-run
 ```
 
+### LingBot＋RoboTwin
+
+按 [case说明](../benchmarks/static/lingbot_robotwin/README.md) 配置模型和仿真两个Python环境，在env模板中填入已有源码、checkpoint和RoboTwin资产路径。该入口使用本地资源，不自动下载。
+
+```bash
+source .local/lingbot-robotwin.env
+bash benchmarks/static/lingbot_robotwin/run.sh \
+  --task adjust_bottle --episodes 1 --start-seed 10000 --model-seed 0 \
+  --schedule paper_async --overlap-actions 2 \
+  --output-dir runs/static/lingbot_robotwin/paper-async-001 --dry-run
+```
+
+LingBot的n′范围0..16，以控制指令计数；延迟同时应用于KV/VAE观测历史。默认是sync/0，切换回同步时同时去掉两个异步参数。
+
 先显式加载所选case的env文件，再运行对应命令。预检成功后去掉 `--dry-run`，添加 `--gpu 3`；按需添加 `--record-video`。切换论文异步使用 `--schedule paper_async --overlap-actions 2`。所有case的 `--episodes` 都是本次运行的总回合数；当前RoboCasa一次命令只选择一个任务和布局组合。
 
 全量π0.5 `libero_object` 使用 `--episodes 500 --batch-size 10`。RoboCasa对照可添加 `--reference-run` 检查与已完成baseline相同的初始化。完整参数和结果口径以各case文档为准。

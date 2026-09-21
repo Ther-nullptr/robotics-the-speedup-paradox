@@ -1,6 +1,7 @@
 """Critical LingBot cache, budget and action-coordinate behavior."""
 
 from types import SimpleNamespace
+from copy import deepcopy
 
 import numpy as np
 import pytest
@@ -79,3 +80,108 @@ def test_text_encoder_restores_only_the_checkpoint_shared_embedding_alias():
         model, {"shared.weight", "encoder.embed_tokens.weight"}
     )
     assert model.encoder.embed_tokens is untied
+
+
+@pytest.mark.parametrize(
+    "schedule,delay",
+    [
+        ("sync", 0),
+        ("paper_async", 0),
+        ("paper_async", 2),
+        ("paper_async", 6),
+        ("paper_async", 16),
+    ],
+)
+def test_history_policy_delays_entire_cache_without_leaking_live_observations(
+    schedule, delay
+):
+    from robotics_bench.protocols.lingbot_runner import run_episode
+
+    observation = {"image": np.array([0]), "state": np.array([0])}
+    simulator = SimpleNamespace(description="adjust the bottle", step_count=0)
+    inputs, updates, events, executed, frames = [], [], [], [], []
+
+    def step(action):
+        executed.append(float(action[0]))
+        simulator.step_count += 1
+        # A simulator may reuse its buffers; previous snapshots must survive.
+        for value in observation.values():
+            value[:] = simulator.step_count
+        return observation, False
+
+    simulator.step = step
+    simulator.render = lambda: simulator.step_count
+    engine = SimpleNamespace(reset=lambda prompt: None)
+
+    def infer(snapshot, prompt):
+        inputs.append(deepcopy(snapshot))
+        action = np.zeros((16, 2, 16), dtype=np.float32)
+        action[0] = np.arange(32).reshape(2, 16) + (len(inputs) - 1) * 100
+        # A consumer may mutate its input; history and simulator stay isolated.
+        snapshot["image"][:] = -999
+        return action
+
+    def update(keyframes, action):
+        updates.append((deepcopy(keyframes), action.copy()))
+        for snapshot in keyframes:
+            snapshot["state"][:] = -999
+
+    engine.infer_chunk, engine.update_cache = infer, update
+    result = run_episode(
+        engine,
+        simulator,
+        observation,
+        max_steps=50,
+        schedule=schedule,
+        overlap_actions=delay,
+        on_event=events.append,
+        on_frame=frames.append,
+    )
+    assert result["primitive_steps"] == 50
+    assert result["cache_updates"] == 2  # No cache update for the truncated last chunk.
+    assert executed == list(range(16, 32)) + list(range(100, 132)) + [200, 201]
+    assert frames == list(range(51))  # Recording follows live control, not stale input.
+    expected_inference_steps = [0, 16 - delay, 48 - delay]
+    for snapshot, source_step in zip(inputs, expected_inference_steps, strict=True):
+        assert snapshot["image"].tolist() == snapshot["state"].tolist() == [source_step]
+    cache_events = [e for e in events if e["kind"] == "cache_update"]
+    for (keyframes, action), nominal, event in zip(
+        updates,
+        [list(range(4, 17, 4)), list(range(20, 49, 4))],
+        cache_events,
+        strict=True,
+    ):
+        expected = [max(0, step - delay) for step in nominal]
+        assert [int(o["image"][0]) for o in keyframes] == expected
+        assert [int(o["state"][0]) for o in keyframes] == expected
+        assert event["observation_steps"] == expected
+        assert event["nominal_keyframe_steps"] == nominal
+        assert max(expected) == event["control_step"] - delay
+        # Retain native predicted-action conditioning, including first condition frame.
+        base = 0 if nominal[0] == 4 else 100
+        np.testing.assert_array_equal(action[0], np.arange(32).reshape(2, 16) + base)
+    inference_events = [e for e in events if e["kind"] == "inference"]
+    assert [e["observation_step"] for e in inference_events] == expected_inference_steps
+    assert [
+        e["cache_observation_max_step"] for e in inference_events
+    ] == expected_inference_steps
+    assert [e["history_offset_steps"] for e in inference_events] == [0, delay, delay]
+
+
+@pytest.mark.parametrize(
+    "schedule,delay",
+    [
+        ("sync", 2),
+        ("paper_async", -1),
+        ("paper_async", 17),
+        ("paper_async", True),
+        ("async", 2),
+    ],
+)
+def test_invalid_history_policy_fails_before_model_or_environment_use(schedule, delay):
+    from robotics_bench.protocols.lingbot_runner import run_episode
+
+    with pytest.raises(ValueError, match="schedule|overlap_actions"):
+        run_episode(
+            None, None, {}, max_steps=10, schedule=schedule, overlap_actions=delay
+        )
