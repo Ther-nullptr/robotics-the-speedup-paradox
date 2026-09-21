@@ -3,6 +3,7 @@
 import argparse
 from contextlib import ExitStack
 from dataclasses import asdict
+from functools import partial
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from refinement import make_refined_env  # noqa: E402
 from research_timestep import compare, snapshot, write_json  # noqa: E402
+from robotics_bench.kinetix.command_clock import CommandClock  # noqa: E402
 
 
 def main():
@@ -24,7 +26,18 @@ def main():
         "--variants",
         default="direct,collision,held_motor_collision,impulse_motor_collision",
     )
-    parser.add_argument("--controls", type=int, default=256)
+    parser.add_argument(
+        "--controls",
+        type=int,
+        default=256,
+        help="Maximum native 30 Hz ticks, including held-command ticks",
+    )
+    parser.add_argument(
+        "--control-hz",
+        type=float,
+        default=10,
+        help="Command update rate; default 10 holds each command for 3 native ticks; 30 restores the original cadence",
+    )
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--policy-dir", type=Path)
     source.add_argument("--action-tape-dir", type=Path)
@@ -39,6 +52,12 @@ def main():
         parser.error("Factors must include 1; controls must be within 1..256")
     if args.flow_steps < 1:
         parser.error("flow-steps must be positive")
+    try:
+        CommandClock(
+            control_hz=args.control_hz, native_tick_seconds=1 / 30, fixed_action=0
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     with ExitStack() as resources:
         run(args, factors, resources)
 
@@ -79,6 +98,11 @@ def run(args, factors, resources):
         "terminal_cadence": "control_boundary",
         "reward_sampling": "native_physics_starts",
         "native_physics_seconds": 1 / 60,
+        "command_hz": args.control_hz,
+        "execute_horizon_commands": 4,
+        "nominal_policy_hz": args.control_hz / 4 if args.policy_dir else None,
+        "step_unit": "native_control_tick",
+        "tape_semantics": "one effective command per native tick",
         "reference_state_projection": False,
         "devices": [str(x) for x in jax.devices()],
         "rows": [],
@@ -88,6 +112,7 @@ def run(args, factors, resources):
                 "benchmarks/dynamic/kinetix/refinement.py",
                 "benchmarks/dynamic/kinetix/research_refinement.py",
                 "src/robotics_bench/kinetix/native/jax2d/engine.py",
+                "src/robotics_bench/kinetix/command_clock.py",
             )
         },
     }
@@ -132,6 +157,24 @@ def run(args, factors, resources):
                         action_dim=env.action_space(params).shape[0],
                     )
                     policy.reset(args.seed)
+                if factor == 1:
+                    fixed_action = None
+                    if policy is None and tape is None:
+                        fixed_action = np.zeros(
+                            env.action_space(params).shape, np.float32
+                        )
+                        fixed_action[: static.num_motor_bindings] = np.where(
+                            np.arange(static.num_motor_bindings) % 2 == 0, 0.5, -0.5
+                        )
+                    command_clock = CommandClock(
+                        control_hz=args.control_hz,
+                        native_tick_seconds=float(base.dt) * static.frame_skip,
+                        infer=partial(policy.infer, flow_steps=args.flow_steps)
+                        if policy
+                        else None,
+                        tape=tape,
+                        fixed_action=fixed_action,
+                    )
                 frames, rewards, goals = [snapshot(state, movable)], [], []
                 terminal_control = None
                 count = (
@@ -156,7 +199,9 @@ def run(args, factors, resources):
                         make_render_pixels(params, vstatic.replace(downscale=1))
                     )
                     writer = imageio.get_writer(
-                        output / f"{name}.mp4", fps=30, macro_block_size=1
+                        output / f"{name}.mp4",
+                        fps=1 / (base.dt * static.frame_skip),
+                        macro_block_size=1,
                     )
                     resources.callback(writer.close)
                     writer.append_data(
@@ -165,19 +210,7 @@ def run(args, factors, resources):
                     video_frames = 1
                 for index in range(count):
                     if factor == 1:
-                        if tape is not None:
-                            action = tape[index]
-                        elif policy:
-                            if index % 4 == 0:
-                                chunk = policy.infer(obs, args.flow_steps)
-                            action = chunk[index % 4]
-                        else:
-                            action = np.zeros(
-                                env.action_space(params).shape, np.float32
-                            )
-                            action[: static.num_motor_bindings] = np.where(
-                                np.arange(static.num_motor_bindings) % 2 == 0, 0.5, -0.5
-                            )
+                        action = command_clock.sample(index, obs)
                         actions.append(np.asarray(action))
                     obs, state, reward, done, info = env.step_env(
                         jax.random.fold_in(jax.random.key(args.seed), index),
@@ -216,6 +249,18 @@ def run(args, factors, resources):
                     "task": task,
                     "factor": factor,
                     "variant": variant,
+                    "command_hz": args.control_hz,
+                    "command_period_seconds": 1 / args.control_hz,
+                    "native_ticks_per_command": command_clock.hold_ticks,
+                    "command_updates": (len(rewards) + command_clock.hold_ticks - 1)
+                    // command_clock.hold_ticks,
+                    "policy_inference_calls": command_clock.inference_calls
+                    if factor == 1
+                    else 0,
+                    "command_update_native_ticks": list(
+                        range(0, len(rewards), command_clock.hold_ticks)
+                    ),
+                    "step_unit": "native_control_tick",
                     "motor_feedback_hz": 1 / base.dt
                     if "motor" in variant
                     else 1 / params.dt,

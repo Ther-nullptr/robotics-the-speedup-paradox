@@ -25,6 +25,14 @@ def compose(run_dir, task, variants, fps):
     tapes = {r["action_tape_sha256"] for r in selected}
     if len(tapes) != 1:
         raise ValueError("Videos must use one identical action tape")
+    if (
+        len({r["control_dt_seconds"] for r in selected}) != 1
+        or len({r.get("command_hz", 1 / r["control_dt_seconds"]) for r in selected})
+        != 1
+    ):
+        raise ValueError("Videos must use the same native tick and command clocks")
+    capture_hz = 1 / reference["control_dt_seconds"]
+    command_hz = reference.get("command_hz", capture_hz)
     common_control = min(r["observed_controls"] for r in selected)
     trajectories = []
     for row in selected:
@@ -67,15 +75,15 @@ def compose(run_dir, task, variants, fps):
                 x = column * width
                 draw.rectangle((x, 0, x + width, header), fill="#ecf0f5")
                 title = (
-                    "Original"
+                    ("Original" if command_hz == capture_hz else "Native physics")
                     if row["factor"] == 1
                     else row["variant"].replace("_", " ")
                 )
                 draw.text((x + 12, 10), title, font=font, fill="#122337")
                 lines = [
                     f"Physics dt: {row['physics_dt_seconds'] * 1000:.6g} ms",
-                    f"Motor feedback: {row['motor_feedback_hz']:g} Hz",
-                    f"Sim time: {current * row['control_dt_seconds']:.3f} s | control {current}",
+                    f"Commands: {command_hz:g} Hz | Motor: {row['motor_feedback_hz']:g} Hz",
+                    f"Sim time: {current * row['control_dt_seconds']:.3f} s | native tick {current}",
                 ]
                 for line, label in enumerate(lines):
                     draw.text(
@@ -122,7 +130,7 @@ def compose(run_dir, task, variants, fps):
             )
             draw.text(
                 (12, y + 70),
-                f"Reward sampled at native 60 Hz times | Playback {fps / 30:.3g}x | 30 Hz recorded states; no trajectory interpolation",
+                f"Reward sampled at native 60 Hz times | Playback {fps / capture_hz:.3g}x | {capture_hz:g} Hz recorded states; no trajectory interpolation",
                 font=small,
                 fill="#122337",
             )

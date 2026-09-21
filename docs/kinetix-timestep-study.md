@@ -97,7 +97,7 @@ source .local/kinetix.env
 
 本轮实际把physics dt从1/60秒缩到1/2400秒，每条控制执行80次完整物理更新；重力、碰撞检测、约束求解和积分都在小时间片上执行。**完整KINETIX任务的一致性尚未通过**。没有使用原版状态投影、未来状态或复制动画帧来制造一致性。
 
-`research_refinement.py`先从原生环境的本地RTC policy记录动作带（N=5，每4条控制重新预测），随后各变体使用同一动作带。seed=0、零动作噪声、无注入延迟，控制周期保持1/30秒。动作带在原版首次终止或观察上限处结束；细分版若尚未终止，明确记为`censored=true`和`action_tape_exhausted`，不计为256步超时。这是固定输入的模拟器研究，不是闭环policy成功率评估。
+以下已报告的视频结果使用30 Hz动作更新：`research_refinement.py`先从原生环境的本地RTC policy记录动作带（N=5，每4条控制重新预测），随后各变体使用同一动作带。seed=0、零动作噪声、无注入延迟，控制周期保持1/30秒。动作带在原版首次终止或观察上限处结束；细分版若尚未终止，明确记为`censored=true`和`action_tape_exhausted`，不计为256步超时。这是固定输入的模拟器研究，不是闭环policy成功率评估。
 
 新的reward采样固定为每个原生1/60秒窗口的起点：r=40时取每条控制的第0、40个微步生成的接触manifold，仍沿用原版max-reward、any-terminal、最后一个被选中采样点的GoalR规则。所有物理接触仍在微步上更新，只固定任务判据的观察时刻。
 
@@ -128,10 +128,18 @@ source .local/kinetix.env
 
 先按[入口说明](../benchmarks/dynamic/kinetix/README.md)配置独立Python环境和本地checkpoint目录。研究工具仅访问显式提供的本地资源。
 
+研究入口现在默认`--control-hz 10`：每个外层动作保持100 ms（3个原生tick），新policy每4次动作更新推理一次，名义频率2.5 Hz。原生和impulse变体的电机反馈仍为60 Hz；r=40的物理求解仍为2400 Hz。`--control-hz 15`对应每动作保持2个tick，`--control-hz 30`恢复下面已有视频的设置。仅接受与原生tick网格整齐对齐的频率，不做隐式取整。
+
+终止检查、录像和预算仍使用30 Hz原生tick，所以一个动作保持期间也能终止；256 tick仍是8.5333秒。为兼容既有产物，`control_dt_seconds`、`observed_controls`和`terminal_control`继续表示原生tick及其计数，`step_unit=native_control_tick`明确其单位；新增`command_hz`、`command_updates`、`policy_inference_calls`及`command_update_native_ticks`区分命令更新和模型调用。研究入口的10 Hz默认值不修改正式`run.py`的原生协议。
+
+新policy在10 Hz下会延长每个预测动作的执行时间，这是新的部署条件，不能用它直接替换上述30 Hz结果。若使用已有30 Hz动作带，则按原时间轴因果采样第0、3、6…项并保持到下次更新，输入轨迹的总时长不变；保存的有效动作带仍逐原生tick记录，供全部物理变体配对回放。细分变体本身不再次运行policy。
+
+以下命令显式使用30 Hz以复查上表；后续10 Hz实验改为`--control-hz 10`或省略该参数，并使用新的输出目录。
+
 ```bash
 "$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/research_refinement.py \
   --levels car_launch,mjc_walker --factors 1,40 \
-  --variants direct,impulse_motor_collision --controls 256 \
+  --variants direct,impulse_motor_collision --controls 256 --control-hz 30 \
   --policy-dir "$ROBOTICS_KINETIX_POLICY_DIR" --record-video \
   --gpu 0 --output-dir runs/dynamic/kinetix/physical-refinement-001
 
