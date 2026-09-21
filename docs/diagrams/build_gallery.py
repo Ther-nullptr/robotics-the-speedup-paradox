@@ -12,7 +12,7 @@ info = [
         "01-architecture",
         "总体架构",
         "三个静态case、模型/模拟器适配与CPU分析工具的分工。",
-        "实线表示调用或结果传递，虚线表示契约约束。绿色为已有模块，蓝色为规划方向，灰色为外部模型和环境。",
+        "实线表示调用或结果传递，虚线表示契约约束。绿色为已有模块，蓝色为规划方向，灰色为外部框架和环境。",
         "architecture",
     ),
     (
@@ -25,8 +25,8 @@ info = [
     (
         "03-inference-path",
         "模型推理",
-        "Cosmos已实现的加载、原生预处理与动作块输出。",
-        "实线是请求/数据流，虚线表示加载后保留的模型与资源。原生模型来自外部源码，加载审计在推理循环之外；当前没有内置全模型量化backend。",
+        "Cosmos加载、本仓执行代码、可选算子与动作块输出。",
+        "实线是请求/数据流，虚线表示加载后保留的模型与资源。原生loader加载审计后绑定本仓policy/sampler/DiT；可选融合与低精度独立启用，量化全量质量待验证。VAE与attention服务仍在外部。",
         "inference",
     ),
     (
@@ -109,7 +109,7 @@ page = page.replace("__TABS__", tabs).replace(
 (root / "architecture-atlas.html").write_text(page)
 parts = [
     "# 架构与代码逻辑图\n",
-    "这四张图描述目标架构与执行方式。当前已有的是 schema、validator、CPU tests 和协作文件；模型、算子运行时、模拟器和业务 viewer 均待实现。\n",
+    "这四张图描述当前静态case、模型执行与算子、仿真适配和协作流程；动态执行路径仍在规划。\n",
     "[打开离线交互图册](architecture-atlas.html)：切换图、缩放、查看源码和下载 SVG。HTML 内嵌全部图形，可以单独分享，无需联网。\n",
 ]
 for i, d in enumerate(data, 1):

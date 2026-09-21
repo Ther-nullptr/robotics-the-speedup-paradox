@@ -7,9 +7,9 @@
 | [pi05_libero](pi05_libero/README.md) | 原生 LeRobot π0.5＋LIBERO任务 | 已完成object同步及论文异步各500回合；使用任务匹配权重及同源processor，不使用VLASH微调权重 |
 | [cosmos_libero](cosmos_libero/README.md) | Cosmos-Policy＋LIBERO spatial/object/goal/10 | 独立入口；原精度、H=16、n默认16；object单任务sync/paper_async GPU smoke通过，其余任务闭环待验证 |
 | [cosmos_robocasa](cosmos_robocasa/README.md) | RoboCasa专用Cosmos checkpoint＋指定fork和控制器 | 原精度、H=32、n默认16；TurnOffMicrowave固定场景sync/paper_async GPU smoke通过，其余任务待验证 |
-| `lingbot_va/` | LingBot-VA静态任务 | 任务/模拟器/checkpoint组合待明确；cache与历史状态独立定义 |
+| [lingbot_robotwin](lingbot_robotwin/README.md) | LingBot-VA＋RoboTwin aloha-agilex双臂任务 | 原生同步缓存协议；adjust_bottle GPU smoke通过；仅本地资源，paper_async待定义 |
 
-LingBot-VA仍为planned。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
+LingBot优先适配RoboTwin，当前同步入口与其他case的paper_async入口分别声明能力。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
 
 ## 文件归属
 
@@ -19,7 +19,7 @@ LingBot-VA仍为planned。目录名表示接入范围；运行配置必须进一
 
 静态任务可以异步运行，也可以发生正常物理演化。任务分类、调度策略和等待期间世界推进分别声明；本路径不依赖DOM的时延补偿或过期动作规则。
 
-本路径的论文异步使用 `schedule=paper_async`，`overlap_actions=n′` 在0到实际执行长度n之间；π0.5默认n为5，Cosmos默认n为16。π0.5入口映射到外部 `eval.async_delay`，Cosmos由本仓runner回取 `t−n′` 观测；两者均使用同一历史快照的图像/state，历史不足时使用当前观测。真实后台并发是独立扩展，不作为论文异步的验收门槛。
+π0.5和Cosmos的论文异步使用 `schedule=paper_async`，`overlap_actions=n′` 在0到实际执行长度n之间；π0.5默认n为5，Cosmos默认n为16。π0.5入口映射到外部 `eval.async_delay`，Cosmos由本仓runner回取 `t−n′` 观测；两者均使用同一历史快照的图像/state，历史不足时使用当前观测。真实后台并发是独立扩展，不作为论文异步的验收门槛。
 
 ## 接入与验收
 

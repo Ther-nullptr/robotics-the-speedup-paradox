@@ -121,6 +121,13 @@ def test_dry_run_is_cpu_only_and_does_not_create_output(config, inputs, monkeypa
         key: str(value) for key, value in inputs.items() if key != "output_dir"
     }
     assert result["options"] == {
+        "model_runtime": "owned",
+        "optimizations": {
+            "switches": [],
+            "precision": "bf16",
+            "scopes": ["dit"],
+            "tactic": 0,
+        },
         "suite": "libero_object",
         "episodes": 1,
         "task_ids": None,
@@ -384,3 +391,25 @@ def test_auxiliary_resource_content_changes_fingerprint(config, inputs, resource
         path = path / "config.yaml"
     path.write_bytes(b"changed resource")
     assert first != plan(config, inputs)["case_fingerprint"]
+
+
+def test_owned_runtime_switches_and_precision_are_recorded(config, inputs):
+    arguments = []
+    for name, path in inputs.items():
+        arguments.extend(["--" + name.replace("_", "-"), str(path)])
+    args = config.build_parser().parse_args(
+        arguments
+        + [
+            "--enable",
+            "modulation",
+            "--enable",
+            "cuda_graph",
+            "--precision",
+            "int8",
+            "--dry-run",
+        ]
+    )
+    plan = config.build_plan(args)
+    assert plan["options"]["model_runtime"] == "owned"
+    assert plan["options"]["optimizations"]["precision"] == "int8"
+    assert plan["options"]["optimizations"]["switches"] == ["modulation", "cuda_graph"]

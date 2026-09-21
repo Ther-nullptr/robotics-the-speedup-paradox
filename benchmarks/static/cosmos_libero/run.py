@@ -216,6 +216,13 @@ def execute(plan, *, engine_type=None, suite_type=None):
                 sorted({item["description"] for item in planned}),
                 output / "checkpoint-load.json",
             )
+            if "optimizations" in options:
+                from robotics_bench.optimizations.entry import from_dict
+
+                engine.configure_optimizations(
+                    from_dict(options["optimizations"]),
+                    runtime=options["model_runtime"],
+                )
             audit = json.loads((output / "checkpoint-load.json").read_text())
             if audit.get("status") != "passed":
                 raise RuntimeError("Checkpoint audit did not pass")

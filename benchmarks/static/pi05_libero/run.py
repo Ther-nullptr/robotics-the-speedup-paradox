@@ -1,7 +1,8 @@
-"""Run a bounded LeRobot PI0.5 trial through a compatible external LIBERO evaluator.
+"""Run a bounded PI0.5 trial through a compatible external LIBERO evaluator.
 
-Only the standard library is imported until execution. Source/checkpoint paths
-are explicit; the external evaluator and model dependencies are not vendored.
+CPU preflight does not import model dependencies. The default owned runtime
+uses repository-maintained model execution code with explicit external assets
+and optional framework/simulator dependencies.
 """
 
 from __future__ import annotations
@@ -21,6 +22,12 @@ import re
 import subprocess
 import sys
 import traceback
+from contextlib import nullcontext
+
+_REPOSITORY = Path(__file__).resolve().parents[3]
+if str(_REPOSITORY / "src") not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY / "src"))
+from robotics_bench.optimizations.entry import add_arguments, configuration, from_dict  # noqa: E402
 
 
 DEFAULT_CONFIG = Path(__file__).with_name("case.json")
@@ -168,6 +175,7 @@ def build_parser():
         epilog="Experiment flags override --config, then case defaults. "
         "Source paths may also be provided via ROBOTICS_* environment variables.",
     )
+    add_arguments(parser)
     paths = parser.add_argument_group("source and resource paths")
     for name in (
         "sim-source",
@@ -300,6 +308,7 @@ def build_parser():
 
 
 def build_plan(args):
+    optimization = configuration(args)
     case_fields = read_object(DEFAULT_CONFIG)
     cli_options = {
         name: value for name, value in vars(args).items() if name in case_fields
@@ -313,6 +322,12 @@ def build_plan(args):
             )
         cli_options.update(quant_ladder="none", quant_selected_profile=None)
     options = load_options(args.config, cli_options)
+    if (optimization.enabled or optimization.precision != "bf16") and (
+        options["compile_model"] or options["quant_ladder"] != "none"
+    ):
+        raise ValueError(
+            "Owned optimizations require compile_model=false and no external quantization ladder"
+        )
     record_all = options["video_episodes_per_task"] == "all"
     video_limit = (
         options["episodes"] if record_all else options["video_episodes_per_task"]
@@ -507,11 +522,20 @@ def build_plan(args):
         "libero_config": file_hash(config_file),
         "quant_profile": profile_identity,
     }
+    identity["model_runtime"] = args.model_runtime
+    identity["optimizations"] = optimization.to_dict()
+    identity["owned_runtime"] = {
+        path.relative_to(_REPOSITORY).as_posix(): file_hash(path)
+        for path in sorted((_REPOSITORY / "src").rglob("*"))
+        if path.suffix in (".py", ".cu", ".cuh") and path.is_file()
+    }
     fingerprint = hashlib.sha256(
         json.dumps(identity, sort_keys=True).encode()
     ).hexdigest()
     return {
         "format": "pi05-libero-smoke-v1",
+        "model_runtime": args.model_runtime,
+        "optimizations": optimization.to_dict(),
         "run_kind": "functional_smoke" if options["episodes"] == 1 else "evaluation",
         "environment_protocol": "explicit_initial_state_v1",
         "case_fingerprint": fingerprint,
@@ -617,7 +641,10 @@ def execute(plan):
             os.environ["VLASH_QSERVE_ROOT"] = plan["sources"]["kernel"]["path"]
         sys.path.insert(0, plan["sources"]["sim"]["path"])
         os.chdir(output)
-        from lerobot.policies.pi05.modeling_pi05 import PI05Policy
+        if plan["model_runtime"] == "owned":
+            from robotics_bench.models.pi05.modeling_pi05 import PI05Policy
+        else:
+            from lerobot.policies.pi05.modeling_pi05 import PI05Policy
         import torch
 
         evaluator = importlib.import_module("vlash.eval_libero")
@@ -644,9 +671,19 @@ def execute(plan):
             if plan["video"]["enabled"]
             else None
         )
-        with checkpoint_load_guard(
-            PI05Policy, output / "checkpoint-load.json"
-        ) as loaded_models:
+        from robotics_bench.optimizations.entry import owned_pi05_factory
+
+        factory_context = (
+            owned_pi05_factory(evaluator, from_dict(plan["optimizations"]))
+            if plan["model_runtime"] == "owned"
+            else nullcontext([])
+        )
+        with (
+            factory_context as optimization_reports,
+            checkpoint_load_guard(
+                PI05Policy, output / "checkpoint-load.json"
+            ) as loaded_models,
+        ):
             with evaluation_audit(
                 evaluator,
                 make_lerobot_libero_env,
@@ -657,9 +694,29 @@ def execute(plan):
                 evaluator.main()
             if recorder is not None:
                 manifest["video"]["files"] = recorder.paths
-            manifest["quantized_modules"] = audit_quantized_modules(
-                loaded_models, plan["identity"]["case"]["quant_ladder"]
-            )
+            if (
+                plan["model_runtime"] == "owned"
+                and plan["optimizations"]["precision"] != "bf16"
+            ):
+                manifest["quantized_modules"] = [
+                    {"name": name, **details}
+                    for report in optimization_reports
+                    for name, details in report.get("quantization", {})
+                    .get("modules", {})
+                    .items()
+                ]
+                if not manifest["quantized_modules"]:
+                    raise RuntimeError(
+                        "Requested owned quantization installed no modules"
+                    )
+            else:
+                manifest["quantized_modules"] = audit_quantized_modules(
+                    loaded_models, plan["identity"]["case"]["quant_ladder"]
+                )
+        manifest["optimization_reports"] = optimization_reports
+        manifest["runtime"]["policy_class"] = (
+            PI05Policy.__module__ + "." + PI05Policy.__name__
+        )
         audit = read_object(required_file(output / "checkpoint-load.json"))
         if audit.get("status") != "passed":
             raise RuntimeError("Trial ended without a successful checkpoint audit")

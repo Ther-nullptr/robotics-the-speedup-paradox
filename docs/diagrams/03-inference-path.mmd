@@ -1,15 +1,19 @@
 flowchart LR
     accTitle: Current Cosmos Inference Boundary
-    accDescr: The Cosmos adapter keeps model loading and checkpoint auditing outside the inference loop. It selects the explicit LIBERO or RoboCasa case, preprocesses raw observations with native semantics, calls the external model, and returns a CPU action chunk. Quantized backends are not built in.
+    accDescr: Native loading and checkpoint audit precede binding owned Cosmos policy, sampler and DiT execution code. Optional fusion and precision adapters preserve the engine boundary. VAE and attention services remain external. CPU action chunks are returned to the runner.
     resources["Policy checkpoint / VAE / statistics / T5"] --> load["Native model loading and coverage audit"]
     case_config["Explicit case: LIBERO H16 or RoboCasa H32"] --> load
     observations["Raw cameras and 9D proprio"] --> preprocessing["Flip once, then native JPEG / resize / normalization"]
-    load -. "model and cached resources" .-> inference["Native Cosmos get_action"]
+    load --> binding["Bind owned policy / sampler / DiT"]
+    binding -. "model and cached resources" .-> inference["Owned Cosmos get_action"]
     preprocessing --> inference
     inference --> extraction["Action chunk extraction and unnormalization"]
+    inference --> optimizations["Optional BF16 fusion / graph / low precision"]
+    optimizations --> kernels["Independent robotics kernels"]
+    inference --> dependencies["External VAE / attention services"]
     extraction --> cpu_actions["Finite CPU action array: H by 7"]
     cpu_actions --> runner["Runner executes first n actions"]
     classDef existing fill:#dcfce7,stroke:#15803d,color:#14532d
     classDef external fill:#f1f5f9,stroke:#64748b,color:#0f172a
-    class load,case_config,observations,preprocessing,extraction,cpu_actions,runner existing
-    class resources,inference external
+    class load,binding,inference,optimizations,kernels,case_config,observations,preprocessing,extraction,cpu_actions,runner existing
+    class resources,dependencies external

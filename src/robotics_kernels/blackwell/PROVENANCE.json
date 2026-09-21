@@ -1,0 +1,91 @@
+{
+  "source": "streaming-inference-infra-code/vlm/streaming_vlm_kernels",
+  "revision": "1c6f8b8ac31c49e401ee267647b3f967725cd26e",
+  "hardware_validation": "Pending on Blackwell; sources retained independently on the current SM89 host.",
+  "files": [
+    {
+      "file": "fp8_linear.py",
+      "original_sha256": "a82c9395a935bb15d6caed2803fe41981dbbb383463308402d72b03313a7be5a"
+    },
+    {
+      "file": "mxfp8_linear.py",
+      "original_sha256": "0d0ce25c81363ad160393da44e6c4ff5df81264099b4d27a8f1330e148f9dbec"
+    },
+    {
+      "file": "cute_fp4_swiglu.py",
+      "original_sha256": "f4bf550efe4ce7fd80583c194a66facab359de528400a90ac25f832771c8b87e"
+    },
+    {
+      "file": "cute_mxfp8_swiglu.py",
+      "original_sha256": "e8cb5eb665942af2749c61244ad912bef9dddf2e11378f31dcb88fbf127b20a1"
+    },
+    {
+      "file": "__init__.py",
+      "original_sha256": "618fd37c3f444ecff5417558c56ef6ed4610ad8db219816e0e3359e55215b954"
+    },
+    {
+      "file": "extension_loader.py",
+      "original_sha256": "808dd31ef6f1f76b3a752d00662c6da23a3a5caf3a644cc3e27afd83896379ce"
+    },
+    {
+      "file": "tensor_cache.py",
+      "original_sha256": "e0c8a83e0bbe71c3dbcc7fe3f4475c6eb55b5f5f2aff7ee78773790886bc2fc7"
+    },
+    {
+      "file": "mxfp8_swiglu.py",
+      "original_sha256": "49aefe61c1835e8acc895163f65bbd803c7aecaedd3b1efe6d674b6a466b390a"
+    },
+    {
+      "file": "cute_fp4_swiglu_kernel.py",
+      "original_sha256": "439583268d7ffb0b6fe160ca92811aeb0c218d7045847153e1999fe45f71b5f6"
+    },
+    {
+      "file": "fp4_linear.py",
+      "original_sha256": "799e99f2b3972f21a5547309b72986dca4e18ced6944ad14b8e1298d92c584b1"
+    },
+    {
+      "file": "sampling_state.py",
+      "original_sha256": "d50eb58d8dbf422754ccbc559a0b6bc5aee76595a83ce97c1d389243cf821847"
+    },
+    {
+      "file": "fp4_mixed_linear.py",
+      "original_sha256": "4ca087f0546f15786001ee56942404cacdb1988121690d6164959c2cd55d3af7"
+    },
+    {
+      "file": "fp4_mx_linear.py",
+      "original_sha256": "e766426823d5c18b23e86745391118febb0d59fcb8cd5bc06845d76dfb1d6e98"
+    },
+    {
+      "file": "csrc/fp4_mixed_cutlass_linear.cu",
+      "original_sha256": "ff3b7d65b19f775028fcf70e1bbfb9be1ec8b50402629710376ed9646e25542a"
+    },
+    {
+      "file": "csrc/mxfp8_common.cuh",
+      "original_sha256": "54a7ba7cb4b672bb3ff1ffdffe2a17a4fa93bdf4c4cd33a56f749ff038f00b78"
+    },
+    {
+      "file": "csrc/mxfp8_swiglu.cu",
+      "original_sha256": "c9c96e224ebb4deca70cff5e4bfc17cb3eab258108fd63033bf10c83ebcf7e51"
+    },
+    {
+      "file": "csrc/fp4_cutlass_linear.cu",
+      "original_sha256": "70a8520fe4dbeca310e73e53a37fe4120b0b1a800684ee6c48c87ab1616d96fd"
+    },
+    {
+      "file": "csrc/fp4_mx_cutlass_linear.cu",
+      "original_sha256": "2fc797554bb7a24464a32a58ca10c749479a56d60e41909454d1e22495d6bbad"
+    },
+    {
+      "file": "csrc/mxfp8_cutlass_linear.cu",
+      "original_sha256": "90d912f54154938aa663503ef8559c50c2419fa96eb5c44e7a772808828fb63e"
+    },
+    {
+      "file": "csrc/sampling_bf16.cuh",
+      "original_sha256": "29f8d63926db27c223e60b460faa89c372c709703865fe61d3cb260e069ce2e7"
+    },
+    {
+      "file": "csrc/fp8_cutlass_linear.cu",
+      "original_sha256": "42ae716ee86310ba31ab2893c1a519930ffef69fa6984597a5e702e23672ebd9"
+    }
+  ]
+}

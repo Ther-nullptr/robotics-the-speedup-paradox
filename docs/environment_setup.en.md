@@ -4,6 +4,8 @@
 
 CPU tools, downloads and model/simulator execution use separate environments. `requirements-dev.txt` installs CPU development dependencies. `pip install -e .` installs this repository's package only. There is no complete fresh-machine GPU installer yet.
 
+LingBot prioritizes a separate [RoboTwin case](../benchmarks/static/lingbot_robotwin/README.md), using existing local model and simulator environments. It is not a download-helper preset; its case guide documents paths, versions and the Transformers shared-embedding compatibility handling.
+
 ## 1. CPU environment
 
 Python 3.11 or 3.12 is recommended; package metadata requires Python 3.10 or later. From the repository root:
@@ -39,6 +41,8 @@ The following combinations were used in local experiments. They are compatibilit
 | Case-specific dependencies | LeRobot 0.4.1, Transformers 4.53.3, compatible evaluator changes | LIBERO 0.1.1, Transformer Engine, NATTEN | Compatible RoboCasa fork, Transformer Engine, NATTEN |
 
 The local Cosmos stack uses Transformer Engine `2.2+cu128.torch27` and NATTEN `0.21.0+cu128.torch27`. Compiled extensions must match Torch/CUDA. Current model experiments used an RTX 6000 Ada.
+
+Core model execution code now lives in `src/robotics_bench/models/`, selected by the default `--model-runtime owned`. Common frameworks, loaders and simulators remain external dependencies. Optional fusion requires Triton in the model environment. Integer backends additionally need an explicitly provided compatible CUTLASS checkout and CUDA development toolkit; the Ada build used CUDA 12.8. See the [operator build guide](../src/robotics_kernels/README.md) for paths and architecture selection. FP4/FP8 validation on Blackwell remains pending. Per-round figures use the external profile-visualizer skill with CairoSVG/Cairo in a separate rendering environment; see the [inference benchmark](../benchmarks/inference/README.md).
 
 - **π0.5:** supply a VLASH sim evaluator compatible with this repository's arguments and observation-history protocol. Use a native LeRobot π0.5 LIBERO checkpoint, not VLASH-finetuned weights. The tested external source contains local changes; a package version alone does not establish compatibility. Preflight checks evaluator fields, and manifests record source identity.
 - **Cosmos:** follow the [upstream setup](https://github.com/NVlabs/cosmos-policy/blob/main/SETUP.md) for model dependencies and configure LIBERO and RoboCasa separately. The local environments reused existing Cosmos packages; a complete installation from an empty machine has not been validated.

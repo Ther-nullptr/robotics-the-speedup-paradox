@@ -2,7 +2,9 @@
 
 [项目首页](../README.md) · [环境配置](environment_setup.md) · [协作流程](../CONTRIBUTING.md)
 
-本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。动态任务、通用模型服务和完整量化backend仍属于后续方向。
+本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。模型主要执行路径已迁入本仓，支持独立融合开关和INT4/INT8后端；量化全量任务质量尚待验证。动态任务与通用模型服务仍属于后续方向。
+
+[LingBot＋RoboTwin](../benchmarks/static/lingbot_robotwin/README.md) 使用独立模型worker和本机WebSocket，另有 `lingbot_runner.py` 保留执行后更新KV/VAE缓存的原生节奏。其 `paper_async` 将每个缓存关键帧k的观测移到max(0,k−n′)，推理边界t的最新可见观测为t−n′；原始预测动作条件保持原位。它不走Cosmos的无状态动作块循环。
 
 ## 1. 以case组织实验
 
@@ -10,10 +12,11 @@
 
 | case | 模型调用 | 环境与执行 | 状态 |
 | --- | --- | --- | --- |
-| `pi05_libero` | 兼容外部LeRobot/VLASH evaluator | 本仓桥接、初态适配、加载/覆盖审计 | 可运行；object同步与论文异步各500回合已验证 |
+| `pi05_libero` | 外部evaluator调用本仓PI0.5执行代码；可显式选native参考 | 本仓桥接、初态适配、加载/覆盖审计 | 原始基线object同步/异步各500回合；新优化仅固定输入和单回合验证 |
 | `cosmos_libero` | 本仓 `CosmosEngine(suite="libero")` | 原生LIBERO adapter＋共享静态runner | 可运行；固定输入对齐和单回合GPU验证 |
 | `cosmos_robocasa` | 本仓 `CosmosEngine(suite="robocasa")` | 原生RoboCasa adapter＋共享静态runner | 可运行；固定场景同步/异步GPU验证 |
-| DynamicVLA＋DOM、Kinetix、LingBot-VA | 待接入 | 各自保留任务与执行协议 | 规划中 |
+| `lingbot_robotwin` | 外部LingBot模型worker＋本仓客户端 | RoboTwin双臂控制与sync/paper_async观测/cache更新循环 | 验证范围见case说明 |
+| DynamicVLA＋DOM、Kinetix | 待接入 | 各自保留任务与执行协议 | 规划中 |
 
 ## 2. 当前模块关系
 
@@ -22,20 +25,24 @@
 ```mermaid
 flowchart LR
     accTitle: Implemented Static Case Architecture
-    accDescr: Explicit resource preparation supplies three case launchers. Pi05 uses an external evaluator bridge. Cosmos cases use the shared static runner with separate engine and simulator adapters. Both paths produce artifacts for CPU analysis.
+    accDescr: Three case launchers call owned model execution code through the Pi05 evaluator bridge or Cosmos engine. Optional optimization adapters use independent kernels. Simulator and framework dependencies remain external. Runs produce artifacts for CPU analysis.
     resources["Resource preparation"] -. "local paths" .-> case_cli["Static case CLI and preflight"]
     case_cli -->|pi05| evaluator["External evaluator bridge"]
     case_cli -->|Cosmos| runner["Static runner"]
     runner --> engine["Cosmos engine"]
     runner --> simulator["LIBERO or RoboCasa adapter"]
-    engine --> model_source["External Cosmos source"]
+    engine --> models["Owned PI0.5 / Cosmos execution"]
+    evaluator --> models
+    models --> optimizations["Optional optimization adapters"]
+    optimizations --> kernels["Independent robotics kernels"]
+    models --> dependencies["External framework / VAE / attention services"]
     simulator --> native_env["Native simulator"]
     evaluator --> artifacts["Run artifacts"]
     runner --> artifacts
     artifacts --> analysis["CPU summaries and metrics"]
 ```
 
-资源下载在实验前独立执行。模型checkpoint、库和模拟器代码来自显式提供的外部资源，CPU工具顶层不导入Torch或模拟器。π0.5目前保留外部evaluator执行闭环；它没有改成Cosmos的engine/runner实现。
+资源下载在实验前独立执行。checkpoint、公共框架和模拟器来自显式提供的外部资源，CPU工具顶层不导入Torch或模拟器。π0.5保留外部evaluator执行闭环，但默认policy及PaliGemma/Gemma/SigLIP执行本仓源码。Cosmos先由兼容原生loader加载和审计权重，再绑定本仓policy/sampler/DiT类；VAE和attention库仍为外部依赖。两者可用 `--model-runtime native` 选择未加本仓优化的参考路径。
 
 ## 3. 文件职责与阅读顺序
 
@@ -49,6 +56,9 @@ flowchart LR
 | [Cosmos RoboCasa入口](../benchmarks/static/cosmos_robocasa/run.py) / [配置](../benchmarks/static/cosmos_robocasa/config.py) | 固定任务/场景清单、初始化保存和reference比对 |
 | [Cosmos引擎](../src/robotics_bench/engines/cosmos.py) | 原生模型加载、统计量和T5、图像预处理、动作块推理 |
 | [Cosmos加载审计](../src/robotics_bench/engines/cosmos_load_guard.py) | 检查实际权重加载覆盖；限定允许的元数据兼容项 |
+| [模型执行代码](../src/robotics_bench/models/) | PI0.5和Cosmos主要forward；各目录记录原始来源哈希 |
+| [优化适配](../src/robotics_bench/optimizations/) / [算子](../src/robotics_kernels/README.md) | 实例范围开关、BF16融合、图缓存和显式低精度后端 |
+| [推理实验](../benchmarks/inference/README.md) / [profile导出](../src/robotics_bench/profiling/) | 完整policy调用计时、数值比较、实测ledger和逐轮图表 |
 | [LIBERO adapter](../src/robotics_bench/simulators/libero.py) | 任务初态、环境reset/step、成功与渲染 |
 | [RoboCasa adapter](../src/robotics_bench/simulators/robocasa.py) | 场景初始化、动态语言、三相机、控制器动作映射 |
 | [静态runner](../src/robotics_bench/protocols/static_runner.py) | 历史快照、请求触发、执行动作前缀、计数与终止 |
@@ -112,11 +122,19 @@ sequenceDiagram
 
 [环境指南](environment_setup.md) 说明资源与输出位置。日志、视频、checkpoint、下载缓存、个人研究资料都不进入Git；公共文档不依赖某台机器的绝对路径。
 
-## 7. 后续扩展位置
+## 7. 优化与测量边界
 
-- 新模型或完整量化实现接入engine边界，并在匹配的case中验证动作质量、真实backend和完整推理代价。
+优化默认关闭，通过重复 `--enable` 独立选择；精度由 `--precision` 和 `--quant-scope` 指定。INT4/INT8采用真实CUTLASS整数Tensor Core，融合准备、打包与必要转换均计入调用耗时。FP4/FP8保留独立Blackwell源码，尚未完成目标硬件验证。
+
+图与缓存属于模型实例，要求串行调用且上下文内权重不变；变化的输入在每次调用刷新。PI0.5的缺失相机缓存只复用固定placeholder编码，不复用真实图像。关闭上下文会恢复原方法与模块。
+
+每轮重新测无优化BF16锚点，低精度再对照共享优化相同的BF16。计时从准备好的CPU观测到CPU动作块，加载、编译、图捕获与warmup单列；模拟器与控制周期另行统计。profile单独采集，GPU事件时长之和不替代墙钟延迟。固定输入逐值一致与任务成功率分开记录，变慢和数值失败的候选也保留在历史图中。
+
+## 8. 后续扩展位置
+
+- 新模型接入匹配case的模型或engine边界；新增低精度实现接入优化适配层，验证动作质量、真实backend和完整推理代价。
 - 新模拟器实现reset/step、观测、成功、渲染和控制时间；必要的模拟器内部改动放独立fork，并固定来源版本。
 - 动态DOM和Kinetix保留各自控制协议。Kinetix采用原生JAX状态、PRNG和rollout，不要求经过Torch或VLA动作块接口。
-- 只有真实调用方需要时才抽取通用backend、服务/RPC或独立包；当前不存在 `src/streaming_infra/` 或内置CUDA算子库。
+- 只有真实调用方需要时才抽取通用服务/RPC或独立包；当前不存在 `src/streaming_infra/`，本仓算子位于 `src/robotics_kernels/`。
 
 代码与协议变更遵循 [贡献流程](../CONTRIBUTING.md)。更多图稿见 [架构图目录](diagrams/README.md)，其中后续设计均单独标明状态。

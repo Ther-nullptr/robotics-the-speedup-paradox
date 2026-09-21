@@ -112,6 +112,11 @@ def execute(plan):
                 num_inference_steps=opts["num_inference_steps"],
             )
             engine.load(None, output / "checkpoint-load.json")
+            from robotics_bench.optimizations.entry import from_dict
+
+            engine.configure_optimizations(
+                from_dict(opts["optimizations"]), runtime=opts["model_runtime"]
+            )
             manifest["engine"] = engine.metadata
             manifest["runtime_python"] = sys.executable
             manifest["runtime_packages"] = {}

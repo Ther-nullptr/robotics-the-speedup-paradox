@@ -4,6 +4,8 @@
 
 本仓库将CPU工具、资源下载与模型/模拟器运行分开。`requirements-dev.txt` 用于CPU开发；`pip install -e .` 仅安装本仓Python包。GPU环境需要对应case的兼容外部源码和依赖，当前没有统一的一键新机安装器。
 
+LingBot优先通过 [RoboTwin独立case](../benchmarks/static/lingbot_robotwin/README.md) 接入，复用已有模型端和仿真端环境。该入口仅接受本地资源，未加入通用下载工具的case列表；具体版本、路径和Transformers共享embedding兼容处理见case说明。
+
 ## 1. CPU工具环境
 
 建议Python 3.11或3.12；Python包元数据的最低版本为3.10。在仓库根目录运行：
@@ -17,7 +19,7 @@ python tools/compare_speedups.py --input examples/speedups/synthetic.json --mark
 python tools/embodied/trajectory_metrics.py --input tools/embodied/examples/smooth.csv
 ```
 
-CPU开发依赖为NumPy、jsonschema、pytest和Ruff，不包含Torch、CUDA或模拟器。绘图按需安装：
+CPU开发依赖为NumPy、SciPy、jsonschema、pytest和Ruff。SciPy用于RoboTwin末端位姿旋转组合的CPU检查；开发环境不包含Torch、CUDA或模拟器。绘图按需安装：
 
 ```bash
 python -m pip install -r tools/embodied/requirements-plot.txt
@@ -39,6 +41,8 @@ python -m pip install -r tools/embodied/requirements-plot.txt
 | 特有依赖 | LeRobot 0.4.1、Transformers 4.53.3及兼容evaluator改动 | LIBERO 0.1.1、Transformer Engine、NATTEN | 指定RoboCasa fork、Transformer Engine、NATTEN |
 
 Cosmos本机组合使用Transformer Engine `2.2+cu128.torch27`、NATTEN `0.21.0+cu128.torch27`。这些编译扩展必须与实际Torch/CUDA匹配；不同Python、GPU或CUDA组合需按对应项目安装和验证。模型实验目前使用RTX 6000 Ada。
+
+主要模型执行代码现位于本仓 `src/robotics_bench/models/`，默认使用 `--model-runtime owned`，但公共框架、加载器和模拟器依赖仍需配置。可选融合需要模型环境中的Triton；INT后端另外需要兼容CUTLASS checkout和CUDA开发工具链，本次Ada构建使用CUDA 12.8。路径与目标架构必须显式指定，见 [算子构建说明](../src/robotics_kernels/README.md)。FP4/FP8尚待Blackwell实机验证。逐轮图表通过外部profile-visualizer skill生成，CairoSVG/Cairo放在独立渲染环境，见 [推理实验入口](../benchmarks/inference/README.md)。
 
 - **π0.5**：需要支持本仓参数与历史观测协议的VLASH sim evaluator，并使用普通LeRobot π0.5 LIBERO权重。现有兼容源码含本地改动，仅安装相同版本号的LeRobot不足以证明接口可用。入口通过AST预检检查evaluator字段，实际源码身份写入manifest。参见 [case依赖边界](../benchmarks/static/pi05_libero/README.md#已验证范围与外部依赖)。
 - **Cosmos**：按 [官方安装说明](https://github.com/NVlabs/cosmos-policy/blob/main/SETUP.md) 配置模型依赖，分别安装LIBERO和RoboCasa的环境栈。当前普通用户环境复用了本机已有Cosmos packages，未验证从空机器完整重建；这些复用路径不会写入公共模板。
@@ -132,6 +136,20 @@ bash benchmarks/static/pi05_libero/run.sh \
   --suite libero_object --episodes 1 --batch-size 1 --schedule sync --quant none \
   --output-dir runs/static/pi05_libero/sync-001 --dry-run
 ```
+
+### LingBot＋RoboTwin
+
+按 [case说明](../benchmarks/static/lingbot_robotwin/README.md) 配置模型和仿真两个Python环境，在env模板中填入已有源码、checkpoint和RoboTwin资产路径。该入口使用本地资源，不自动下载。
+
+```bash
+source .local/lingbot-robotwin.env
+bash benchmarks/static/lingbot_robotwin/run.sh \
+  --task adjust_bottle --episodes 1 --start-seed 10000 --model-seed 0 \
+  --schedule paper_async --overlap-actions 2 \
+  --output-dir runs/static/lingbot_robotwin/paper-async-001 --dry-run
+```
+
+LingBot的n′范围0..16，以控制指令计数；延迟同时应用于KV/VAE观测历史。默认是sync/0，切换回同步时同时去掉两个异步参数。
 
 先显式加载所选case的env文件，再运行对应命令。预检成功后去掉 `--dry-run`，添加 `--gpu 3`；按需添加 `--record-video`。切换论文异步使用 `--schedule paper_async --overlap-actions 2`。所有case的 `--episodes` 都是本次运行的总回合数；当前RoboCasa一次命令只选择一个任务和布局组合。
 

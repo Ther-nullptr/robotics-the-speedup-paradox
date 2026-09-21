@@ -87,3 +87,8 @@ bash benchmarks/static/cosmos_robocasa/run.sh \
 视频默认关闭；`--record-video` 记录所有实际评估回合，`--no-record-video` 关闭。分辨率672×224，默认30 FPS 播放，播放帧率不改变仿真控制频率。
 
 已在 RTX 6000 Ada 上完成同一任务、layout/style=1/1、环境种子0、模型种子195、H=32/n=16/5步采样的两次 GPU 闭环：同步277步成功、18次请求；论文异步 n′=2 在292步成功、19次请求。加载与覆盖审计通过，异步初态比对通过，请求偏移为首轮0、其后2；视频分别为278和293帧。这些是单回合连通性结果，尚无24任务全量结果或模型推理加速比。
+
+本入口也接受 `--model-runtime owned|native`、`--enable`、`--precision` 与
+`--integer-tactic`，量化范围固定为 `--quant-scope dit`。默认优化关闭。
+与 LIBERO 的 kernel/模型代码共享不代表两个场景的性能或任务质量可以互相替代；
+RoboCasa 的新优化配置需要单独验证。推理工具见 [inference benchmark](../../inference/README.md)。
