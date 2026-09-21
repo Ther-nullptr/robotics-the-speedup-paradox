@@ -126,3 +126,9 @@ TISED 的分量拟合、选点与验证使用分开的配置/seed 或 held-out �
 | 可视化消费者卡住 | 控制逻辑继续，显示丢帧可计数 |
 
 前两项是静态论文异步的配置与模型估计要求；其余是后续实际时钟/队列调度器的验收规格。通用契约校验只覆盖字段与事件一致性，不能证明这些实际调度行为。π0.5入口已有模型smoke，覆盖范围以case记录为准；后续实际并发扩展可先用CPU fake clock/policy/simulator验证时间线。
+
+## KINETIX原生时间实现
+
+已实现的 [KINETIX case](../../benchmarks/dynamic/kinetix/README.md) 使用case专用 `kinetix-native-delay-run-v1` 产物，不冒充通用v1并行trace。默认native-blend保持物理dt、frame_skip、约束参数和控制边界终止判据；分数槽通过process后的执行器指令时间平均表示，不宣称精确重建槽内状态。初始旧队列为原生零动作，没有预取；宿主计算时间不叠加到虚拟release。每条控制记录新旧观测来源与各物理槽权重。
+
+legacy-round在相同原生物理网格下保留控制周期取整敏感性对照，但仍使用当前case的direct启动规则，不能与完整历史RTC预取曲线混称。物理时间片细分属于独立模拟器数值研究。

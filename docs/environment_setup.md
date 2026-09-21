@@ -183,3 +183,17 @@ bash benchmarks/static/pi05_libero/run.sh \
 | Conda中XML/Matplotlib导入报 `XML_SetReparseDeferralEnabled` | 检查Python与libexpat是否来自匹配环境；本机验证曾临时预加载配套库，这不是项目默认启动要求 |
 
 环境检查通过、资源完整和真实模型闭环成功是不同层级的验证。当前提供已验证组合与显式路径绑定，跨机器完整安装仍需要按外部项目依赖检查。
+
+## KINETIX动态实验环境
+
+KINETIX使用独立Python 3.11/JAX环境，模型、环境、Jax2D物理核心和12个关卡已迁入本仓；不需要外部源码路径。配置 `ROBOTICS_KINETIX_PYTHON` 和 `ROBOTICS_KINETIX_POLICY_DIR` 后即可运行。模型checkpoint仍为显式本地资源，入口不自动下载。
+
+```bash
+source .local/kinetix.env
+bash benchmarks/dynamic/kinetix/run.sh \
+  --levels car_launch --flow-steps 1,5 --latencies-ms 0,21.938 \
+  --episodes 1 --start-seed 0 --gpu 3 --validate-native \
+  --output-dir runs/dynamic/kinetix/demo-001
+```
+
+依赖版本、profile重放、录像和统计见 [KINETIX case](../benchmarks/dynamic/kinetix/README.md)。`--dry-run` 不需要JAX；`--record-video` 保存完整回合。物理dt/frame_skip固定在原生值，较细的延迟通过native-blend表示，不通过缩小物理步长实现。

@@ -1,26 +1,14 @@
 # 动态任务实验入口
 
-本目录组织动态任务的case、运行入口和时间协议配置。当前已建立开发入口，时钟驱动、模型与模拟器闭环尚未实现，没有可执行的benchmark命令。
+动态任务按case维护自己的模型、环境与时间协议，共享统计和产物约定。
 
-| 规划case目录 | 绑定范围 | 首次接入要明确的内容 |
+| Case | 当前状态 | 执行路径 |
 | --- | --- | --- |
-| `dynamicvla_dom/` | DynamicVLA＋DOM动态任务 | 任务匹配权重/processor、Isaac环境与资产、历史观测、原生时延及动作交接语义 |
-| [kinetix/](kinetix/README.md) | Kinetix原生JAX策略＋二维任务环境 | 已明确独立policy/env/rollout边界；具体checkpoint/关卡待绑定，观测/动作空间、carry、PRNG与时间协议单独验证 |
+| [KINETIX](kinetix/README.md) | 已有仓内源码和可执行入口 | RTC JAX flow policy＋KINETIX/Jax2D；native-blend延迟、flow步数/延迟配对矩阵、完整视频与统计 |
+| DynamicVLA＋DOM | 规划中 | 独立Isaac后端、原生时延与动作交接协议，后续接入 |
 
-这些case均为planned。DOM接入不自动开放静态任务的π0.5/Cosmos权重；新增模型须建立任务匹配且独立验证的case。具体任务/初态、权重、预后处理、环境版本和baseline在运行配置中固定。
+KINETIX的实际模型、环境、物理核心和关卡代码位于 `src/robotics_bench/kinetix/`，没有外部源码运行依赖。框架环境和checkpoint路径通过case模板配置。DOM不会因KINETIX接入自动获得支持，也不与静态π0.5/Cosmos权重构成任意组合。
 
-## 文件归属
+KINETIX默认保持原生物理网格，通过执行器指令混合近似分数时间槽内的动作切换；旧控制继续推进世界。它与静态 `paper_async` 的历史观测回取不同，也不声称已实现真实并发。详见 [时间协议](../../docs/protocols/simulation.md)、[参考代码整理](../../docs/kinetix-reference-review.md) 和 [case命令](kinetix/README.md)。
 
-- 后续每个case的启动代码与配置放 `benchmarks/dynamic/<case>/run.py`、`case.yaml`，在实际接入时一起创建并验证，不提前放占位文件。
-- DOM等VLA动态任务的ClockDriver、观测历史与动作生效协议放 `src/robotics_bench/protocols/dynamic/`；模型与环境适配分别放 `src/robotics_bench/policies/` 和 `simulators/`。Kinetix先在独立子目录保留原生policy/env/rollout组合，具体归属见其入口；这些源码仍待实际实现。
-- case配置分别声明时间/延迟模式、等待期间世界推进、目标保持、动作有效期和任务预算；运行产物放已忽略的 `runs/dynamic/<case>/`。
-
-本路径可比较同步和异步。同步推理不自动冻结世界；对照固定世界推进和时间域。DOM原生补偿、虚拟profile重放和真实时间测量分别命名，禁止重复计入延迟；按块交接与按时间替换也分别验证。详见 [仿真协议](../../docs/protocols/simulation.md) 和 [多后端协议](../../docs/protocols/simulator-backends.md)。
-
-## 接入与验收
-
-先用CPU fake clock/policy验证事件时间线，再用单场景脚本策略验证延迟期间物体运动、目标保持、动作过期和reset；最后接任务匹配模型并与相同case的baseline比较，无需先做完整论文复现。
-
-报告成功率或任务定义的score、任务时间、观测年龄、动作生效/丢弃、欠载和终止原因；真实时间实验另报deadline miss与real-time factor。模拟时间、host时间和设备计算时间分别记录。任务加速比使用可比时间域中的实际事件；复杂动作替换不能直接套固定chunk周期公式，见 [加速比协议](../../docs/protocols/speedup-metrics.md)。
-
-共享事件/指标约定与 [轨迹工具](../../tools/embodied/README.md)，executor/backend按执行能力复用。DOM与Kinetix分别维护自己的控制循环和baseline，不强制共用一个动态Runner。Issue标记 `dynamic/<case>`；共享底层改动标记 `shared`。静态任务见 [独立入口](../static/README.md)。
+运行产物放 `runs/dynamic/<case>/`。报告分别注明虚拟模拟时间、host调用时间、质量与预算，不能把注入延迟、flow采样步数或单次smoke当作真实硬件加速比或任务集结果。静态入口见 [static](../static/README.md)。

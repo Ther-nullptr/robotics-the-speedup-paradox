@@ -1,0 +1,236 @@
+{
+  "rtc": {
+    "repository": "https://github.com/Physical-Intelligence/real-time-chunking-kinetix",
+    "commit": "9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b",
+    "license": "MIT"
+  },
+  "kinetix": {
+    "repository": "https://github.com/FLAIROx/Kinetix",
+    "commit": "cf7453ea103fa0b77348af1a39f689c658161613",
+    "license": "MIT"
+  },
+  "jax2d": {
+    "distribution": "jax2d",
+    "version": "1.0.0",
+    "license": "MIT"
+  },
+  "changes": [
+    "Private package imports isolate owned execution from installed upstream packages.",
+    "Formatting follows this repository; original algorithms are retained.",
+    "Only the runtime import closure is included; GUI/editor, PPO models and training drivers are excluded.",
+    "Level saving helpers are reduced to native local loading; cloud/training serialization is excluded.",
+    "Removed the shadowed first AutoReplayWrapper definition; the effective upstream class is retained."
+  ],
+  "files": [
+    {
+      "component": "jax2d",
+      "source_path": "__init__.py",
+      "owned_path": "native/jax2d/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "component": "jax2d",
+      "source_path": "collision.py",
+      "owned_path": "native/jax2d/collision.py",
+      "source_sha256": "390a49fb39a501b16c5f75fe10399d857bff160454dfed02875ebf715b313579"
+    },
+    {
+      "component": "jax2d",
+      "source_path": "engine.py",
+      "owned_path": "native/jax2d/engine.py",
+      "source_sha256": "b5a7f479fb0674471c6e7f91c2f87ab5c345923cbf2807c7ce3c724eaf295dd2"
+    },
+    {
+      "component": "jax2d",
+      "source_path": "joint.py",
+      "owned_path": "native/jax2d/joint.py",
+      "source_sha256": "7f23ede2eef5ac465c51021c7aa50ec0c446169eaaed26d71f5ac13b1f9837d6"
+    },
+    {
+      "component": "jax2d",
+      "source_path": "maths.py",
+      "owned_path": "native/jax2d/maths.py",
+      "source_sha256": "403b3b7113bcac4b58f9630905544cd2ca6a719feb71c39f196aee12bf932df3"
+    },
+    {
+      "component": "jax2d",
+      "source_path": "sim_state.py",
+      "owned_path": "native/jax2d/sim_state.py",
+      "source_sha256": "84ad0552c655f4e3d221fab5cec6f85465f7fbe903bec3dcd3d26401a8f5e2f9"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "__init__.py",
+      "owned_path": "native/kinetix/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "environment/__init__.py",
+      "owned_path": "native/kinetix/environment/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "environment/env.py",
+      "owned_path": "native/kinetix/environment/env.py",
+      "source_sha256": "fa05bedd4a3164e7219f91ce5ac8d0f928133371fd5fa18eafbec03ea734bf15"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "environment/env_state.py",
+      "owned_path": "native/kinetix/environment/env_state.py",
+      "source_sha256": "7ea88302ffc091e2314a3c5e09f7c76bbc754468d5e28f6447c12f518335d3ea"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "environment/wrappers.py",
+      "owned_path": "native/kinetix/environment/wrappers.py",
+      "source_sha256": "b3e86d334b443f90c8a732f3a44560231959da4f3602880d40c80a2ab8740937"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "pcg/__init__.py",
+      "owned_path": "native/kinetix/pcg/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "pcg/pcg.py",
+      "owned_path": "native/kinetix/pcg/pcg.py",
+      "source_sha256": "c62a20f05e3edb4c7045458efa3785c694cd1261f2e328c47dace7d847c94100"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "pcg/pcg_state.py",
+      "owned_path": "native/kinetix/pcg/pcg_state.py",
+      "source_sha256": "120b0aba31b70f4b592f243db99963e441a7f3c7e1cf61aa89b6ba2063bd797f"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "render/__init__.py",
+      "owned_path": "native/kinetix/render/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "render/renderer_pixels.py",
+      "owned_path": "native/kinetix/render/renderer_pixels.py",
+      "source_sha256": "bc9b8c85c6ac218542596b4aab64fa6a42058a8454ffc9c70c78b8fc3f33335f"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "render/renderer_symbolic_common.py",
+      "owned_path": "native/kinetix/render/renderer_symbolic_common.py",
+      "source_sha256": "9a862f8b767e662b67e48a4d80f61bcc77bec3d1a71035e86518bde3b645eb88"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "render/renderer_symbolic_entity.py",
+      "owned_path": "native/kinetix/render/renderer_symbolic_entity.py",
+      "source_sha256": "b91b6fbba88cee94ae0034b34799a6744bd48c6392f1e1cf95b52864daebb638"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "render/renderer_symbolic_flat.py",
+      "owned_path": "native/kinetix/render/renderer_symbolic_flat.py",
+      "source_sha256": "331bcbee6afdcb5ee80557936881842f5a76571cbd933060d6c4977482a7c812"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "render/textures.py",
+      "owned_path": "native/kinetix/render/textures.py",
+      "source_sha256": "4d2317b21029a7cf9d0cbb988e218f03363b9d30c5e4c120903f794897d6eabe"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "util/__init__.py",
+      "owned_path": "native/kinetix/util/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "component": "kinetix",
+      "source_path": "util/saving.py",
+      "owned_path": "native/kinetix/util/saving.py",
+      "source_sha256": "f5ef9dce9fb8f12bc6c725d3f247a909bf3111c96cbc43977af8a22adaa88298"
+    },
+    {
+      "component": "rtc",
+      "source_path": "src/model.py",
+      "owned_path": "flow_model.py",
+      "source_sha256": "f59e9479c4fe4386ca027ba1a5c0b4940552adfae8cdb38d177cefec1427482e"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/grasp_easy.json",
+      "owned_path": "levels/grasp_easy.json",
+      "source_sha256": "a1d41d62a35234ba2a1874d05a8a9a386bb35c4664fcf53d047fd7799e0071a5"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/catapult.json",
+      "owned_path": "levels/catapult.json",
+      "source_sha256": "e8f159cebd3bf7b4ae3a6fbd0d447e0682a55798430570e80c701648fdf40974"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/cartpole_thrust.json",
+      "owned_path": "levels/cartpole_thrust.json",
+      "source_sha256": "ac9a36a985b2232100366026866c11ccb7783f96ee453197c481253757e6be23"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/hard_lunar_lander.json",
+      "owned_path": "levels/hard_lunar_lander.json",
+      "source_sha256": "867e87f81b29bfaa2293a8956685c27a7aa697b04a280ded6714e9c6403cc40f"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/mjc_half_cheetah.json",
+      "owned_path": "levels/mjc_half_cheetah.json",
+      "source_sha256": "6b4ec8a866eeec640a74f947300d9c890330252c081c2bbfc84362e4bcdfa514"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/mjc_swimmer.json",
+      "owned_path": "levels/mjc_swimmer.json",
+      "source_sha256": "3804348cb20234cf292990f6df66622a7d7b1eac8ccfc7e8c886964743759a0c"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/mjc_walker.json",
+      "owned_path": "levels/mjc_walker.json",
+      "source_sha256": "ec439be32710102d66df2be05977f4a6881de9ce8884bb48af0c833cb3673043"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/h17_unicycle.json",
+      "owned_path": "levels/h17_unicycle.json",
+      "source_sha256": "3f981f0bde771ccece0355cb9b81ec72c72c73e0be2cf40c491ccebcdb69514a"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/chain_lander.json",
+      "owned_path": "levels/chain_lander.json",
+      "source_sha256": "f38e88c59d3b6bf7d0b57677e7d900498711425f544a603e95f0e00516ed6457"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/catcher_v3.json",
+      "owned_path": "levels/catcher_v3.json",
+      "source_sha256": "295e345ba2ae4933f60ed68f9fb02388075eef91fec748a892710d098cd652a3"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/trampoline.json",
+      "owned_path": "levels/trampoline.json",
+      "source_sha256": "35422286b9e42502802a99c840f792e9afe24b4890aa44e8f4688ce421e381ad"
+    },
+    {
+      "component": "rtc",
+      "source_path": "worlds/l/car_launch.json",
+      "owned_path": "levels/car_launch.json",
+      "source_sha256": "42d1df84c703d2daf6e0f13db8d24f3f3bc8896fee07f8b40aef0f2e84946f89"
+    }
+  ]
+}
