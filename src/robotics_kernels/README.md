@@ -47,6 +47,14 @@ INT 的公开包装遵循 `from_linear → pack_input → forward_packed/forward
 `integer_pack_reuse` 让INT4量化与nibble打包复用同一行数据。所有开关独立保留，
 模型级性能不能由合并后的GEMM微测结果推断。
 
+`ampere_ada/modulation.py` 提供Cosmos的modulation与激活量化融合，保留原BF16
+中间舍入；内部packed carrier同时支持按需提供INT4/INT8，避免混合档位误用格式。
+模型外接口仍交付CPU动作，不向模拟器暴露packed数据。
+`integer_biasless` 为无bias层提供独立尾部处理实验路径；有bias时继续正常计算bias。
+
+目前量化迭代优先Cosmos，π0.5先限于text/LLM。动作专家/diffusion量化暂缓；
+已有可选scope不表示通过了相应任务质量验收。
+
 INT后端使用架构目录内的CUTLASS头文件副本，固定revision为
 `982748aa7356fa838c2ea4994ddcb0b2a4b4cefa`，来源及逐文件哈希见
 `ampere_ada/third_party/cutlass/PROVENANCE.json`。构建不读取

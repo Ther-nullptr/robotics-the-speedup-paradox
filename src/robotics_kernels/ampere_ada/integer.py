@@ -20,6 +20,10 @@ from triton.language.extra.cuda import libdevice
 @lru_cache(maxsize=1)
 def load_integer_extension():
     if hasattr(torch.ops.robotics_integer, "gemm"):
+        if not hasattr(torch.ops.robotics_integer, "gemm_biasless"):
+            raise RuntimeError(
+                "Restart the process after updating the robotics integer extension"
+            )
         return torch.ops.robotics_integer
     from .build import build_inputs
 
@@ -205,6 +209,7 @@ class IntegerLinear(torch.nn.Module):
         bits,
         tactic=0,
         pack_reuse=False,
+        biasless_epilogue=False,
     ):
         super().__init__()
         self.register_buffer("packed_weight", packed)
@@ -220,6 +225,7 @@ class IntegerLinear(torch.nn.Module):
         self.bits = bits
         self.tactic = tactic
         self.pack_reuse = pack_reuse
+        self.biasless_epilogue = biasless_epilogue
         self.backend = f"cutlass_sm80_int{bits}_s32_bf16"
         self._ops = load_integer_extension()
 
@@ -228,7 +234,9 @@ class IntegerLinear(torch.nn.Module):
         return self._weight_descriptor
 
     @classmethod
-    def from_linear(cls, linear, *, bits=8, tactic=0, pack_reuse=False):
+    def from_linear(
+        cls, linear, *, bits=8, tactic=0, pack_reuse=False, biasless_epilogue=False
+    ):
         if (
             bits not in (4, 8)
             or not linear.weight.is_cuda
@@ -269,9 +277,15 @@ class IntegerLinear(torch.nn.Module):
             bits,
             tactic,
             pack_reuse,
+            biasless_epilogue,
         )
 
     def pack_input(self, x):
+        if getattr(x, "_robotics_packed_input", False):
+            packed = x.for_bits(self.bits)
+            if packed.logical_k != self.in_features:
+                raise ValueError("Wrong prepared input feature count")
+            return packed
         if x.shape[-1] != self.in_features:
             raise ValueError("Wrong input feature count")
         return prepare_activation(x, self.bits, pack_reuse=self.pack_reuse)
@@ -283,7 +297,10 @@ class IntegerLinear(torch.nn.Module):
             or packed.format_version != "symmetric-row-v1"
         ):
             raise ValueError("Incompatible activation pack")
-        output = self._ops.gemm(
+        operation = (
+            self._ops.gemm_biasless if self.biasless_epilogue else self._ops.gemm
+        )
+        output = operation(
             packed.data,
             packed.scales,
             self.packed_weight,
@@ -318,12 +335,20 @@ class IntegerProjectionGroup(torch.nn.Module):
             raise ValueError("At least two integer projections are required")
         first = linears[0]
         if any(
-            (m.in_features, m.bits, m.tactic, m.pack_reuse, m.packed_weight.device)
+            (
+                m.in_features,
+                m.bits,
+                m.tactic,
+                m.pack_reuse,
+                m.biasless_epilogue,
+                m.packed_weight.device,
+            )
             != (
                 first.in_features,
                 first.bits,
                 first.tactic,
                 first.pack_reuse,
+                first.biasless_epilogue,
                 first.packed_weight.device,
             )
             for m in linears
@@ -358,6 +383,7 @@ class IntegerProjectionGroup(torch.nn.Module):
             first.bits,
             first.tactic,
             first.pack_reuse,
+            first.biasless_epilogue,
         )
         self._input = self._output = None
         self._remaining = set()
@@ -387,6 +413,10 @@ class IntegerProjectionSlice(torch.nn.Module):
     @property
     def weight(self):
         return self._group().linear.weight
+
+    @property
+    def bits(self):
+        return self._group().linear.bits
 
     def forward(self, x):
         return self._group().project(x, self.index)

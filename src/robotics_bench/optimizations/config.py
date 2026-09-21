@@ -7,6 +7,7 @@ from statistics import median
 from robotics_kernels.ampere_ada.tactics import TACTIC_IDS
 
 PRECISION_SWITCHES = {
+    "modulation_quant",
     "shared_quant",
     "activation_quant_fusion",
     "integer_grouped",
@@ -14,12 +15,15 @@ PRECISION_SWITCHES = {
     "integer_qkv",
     "integer_gate_up",
     "integer_group_views",
+    "integer_biasless",
 }
 
 SWITCHES = (
+    "modulation_quant",
     "flow_loop",
     "mask_cache",
     "condition_cache",
+    "condition_projection_cache",
     "empty_image_cache",
     "rope",
     "gated_residual",
@@ -35,6 +39,7 @@ SWITCHES = (
     "integer_qkv",
     "integer_gate_up",
     "integer_group_views",
+    "integer_biasless",
 )
 
 
@@ -62,6 +67,13 @@ class OptimizationConfig:
             raise ValueError("Unknown integer tactic")
         if self.precision not in ("bf16", "int8", "int4", "fp8", "fp4"):
             raise ValueError("Unknown precision")
+        if "condition_projection_cache" in self.enabled and not {
+            "condition_cache",
+            "flow_loop",
+        } <= set(self.enabled):
+            raise ValueError(
+                "condition_projection_cache requires condition_cache and flow_loop"
+            )
         if "integer_group_views" in self.enabled and not set(self.enabled) & {
             "integer_grouped",
             "integer_qkv",
@@ -113,7 +125,7 @@ def _samples(values):
     return values
 
 
-def measurement_configurations(config, variants=None):
+def measurement_configurations(config, variants=None, *, allow_shared_variants=False):
     """Build an explicit common-anchor cohort before loading the model."""
     rows = [("original", OptimizationConfig())]
     shared = tuple(s for s in config.enabled if s not in PRECISION_SWITCHES)
@@ -129,6 +141,7 @@ def measurement_configurations(config, variants=None):
     if not isinstance(variants, list) or not variants:
         raise ValueError("Variants must be a nonempty list")
     used = {name for name, _ in rows}
+    shared_references = {frozenset(shared)}
     allowed = {"id", "switches", "precision", "scopes", "tactic", "quant_tier"}
     for data in variants:
         if not isinstance(data, dict) or set(data) - allowed:
@@ -138,6 +151,7 @@ def measurement_configurations(config, variants=None):
             not isinstance(name, str)
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name)
             or name in used
+            or name.startswith("optimized-bf16-")
         ):
             raise ValueError(
                 "Variant IDs must be unique, safe filenames and not reference IDs"
@@ -149,7 +163,10 @@ def measurement_configurations(config, variants=None):
             data.get("tactic", config.tactic),
             data.get("quant_tier", config.quant_tier),
         )
-        if {s for s in current.enabled if s not in PRECISION_SWITCHES} != set(shared):
+        current_shared = tuple(
+            s for s in current.enabled if s not in PRECISION_SWITCHES
+        )
+        if set(current_shared) != set(shared) and not allow_shared_variants:
             raise ValueError(
                 "Variants must use the same shared optimization switches as their matched BF16 reference"
             )
@@ -157,6 +174,18 @@ def measurement_configurations(config, variants=None):
             current.enabled
         ) & PRECISION_SWITCHES and not current.precision.startswith("int"):
             raise ValueError("Integer switches require integer precision")
+        if frozenset(current_shared) not in shared_references:
+            reference_id = f"optimized-bf16-{len(shared_references) + 1}"
+            rows.append(
+                (
+                    reference_id,
+                    OptimizationConfig(
+                        current_shared, "bf16", current.scopes, current.tactic
+                    ),
+                )
+            )
+            used.add(reference_id)
+            shared_references.add(frozenset(current_shared))
         used.add(name)
         rows.append((name, current))
     return rows

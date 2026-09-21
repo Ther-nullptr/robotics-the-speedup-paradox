@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# Robotics modifications: owned modulation/residual hooks and metadata-only
+# attention reshaping for optional packed integer activations.
 
 from __future__ import annotations
 
@@ -1580,6 +1582,7 @@ class Block(nn.Module):
         )
 
         video_size = VideoSize(T=T, H=H, W=W)
+        from robotics_bench.optimizations.cosmos import _attention_input
 
         # (ahassani): Hack to correct `video_size` when CP is enabled.
         # I really don't like this, but there doesn't seem to be any central
@@ -1592,7 +1595,7 @@ class Block(nn.Module):
         result_B_T_H_W_D = rearrange(
             self.self_attn(
                 # normalized_x_B_T_HW_D,
-                rearrange(normalized_x_B_T_H_W_D, "b t h w d -> b (t h w) d"),
+                _attention_input(normalized_x_B_T_H_W_D, (B, T * H * W)),
                 None,
                 rope_emb=rope_emb_L_1_1_D,
                 video_size=video_size,
@@ -1627,7 +1630,7 @@ class Block(nn.Module):
             )
             _result_B_T_H_W_D = rearrange(
                 self.cross_attn(
-                    rearrange(_normalized_x_B_T_H_W_D, "b t h w d -> b (t h w) d"),
+                    _attention_input(_normalized_x_B_T_H_W_D, (B, T * H * W)),
                     crossattn_emb,
                     rope_emb=rope_emb_L_1_1_D,
                 ),

@@ -34,6 +34,8 @@ def category(event):
         return "Matrix multiplication"
     if "flash" in name or "softmax" in name:
         return "Attention and softmax"
+    if name.startswith("_prepare_modulation"):
+        return "Modulation and quantization fusion"
     if name.startswith("_prepare") or "quantize" in name:
         return "Quantization and packing"
     if name in ("_rope", "_residual", "_modulate", "_norm_affine", "_gelu_mul"):

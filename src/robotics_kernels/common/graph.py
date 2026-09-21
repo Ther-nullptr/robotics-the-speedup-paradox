@@ -69,8 +69,9 @@ class CudaGraphCall:
             for target, source in zip(self.inputs, inputs):
                 target.copy_(source)
             self.graph.replay()
+            current_stream = torch.cuda.current_stream(device)
             for constant in self._constants:
                 if isinstance(constant, torch.Tensor):
-                    constant.record_stream(torch.cuda.current_stream(device))
+                    constant.record_stream(current_stream)
             self.replays += 1
             return self.output.clone()

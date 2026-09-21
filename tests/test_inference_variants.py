@@ -4,6 +4,32 @@ import pytest
 from robotics_bench.optimizations import config as api
 
 
+def test_explicit_shared_ablation_inserts_matching_bf16_reference():
+    base = api.OptimizationConfig(("flow_loop", "cuda_graph"))
+    rows = api.measurement_configurations(
+        base,
+        [
+            {"id": "int4-before", "precision": "int4"},
+            {
+                "id": "int4-cache",
+                "precision": "int4",
+                "switches": [
+                    "flow_loop",
+                    "cuda_graph",
+                    "condition_cache",
+                    "condition_projection_cache",
+                ],
+            },
+        ],
+        allow_shared_variants=True,
+    )
+    candidate_index = next(
+        i for i, (name, _) in enumerate(rows) if name == "int4-cache"
+    )
+    assert rows[candidate_index - 1][1].precision == "bf16"
+    assert rows[candidate_index - 1][1].enabled == rows[candidate_index][1].enabled
+
+
 def test_sweep_keeps_shared_bf16_and_distinct_integer_variants():
     assert hasattr(api, "measurement_configurations"), "Sweep configuration is missing"
     base = api.OptimizationConfig(("flow_loop", "cuda_graph"))

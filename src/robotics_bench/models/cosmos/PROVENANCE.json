@@ -6,7 +6,8 @@
     {
       "source": "cosmos_policy/_src/predict2/networks/minimal_v4_dit.py",
       "original_sha256": "cc43ecf11b9fe06e5a66fe0dc0f02565e9c0c8b9af16007c58438b4523cb6975",
-      "destination": "minimal_v4_dit.py"
+      "destination": "minimal_v4_dit.py",
+      "modifications": "Owned modulation/residual hooks and metadata-only attention reshaping for optional packed integer activations. The original hash identifies the imported source, not the modified copy."
     },
     {
       "source": "cosmos_policy/_src/predict2/networks/minimal_v1_lvg_dit.py",

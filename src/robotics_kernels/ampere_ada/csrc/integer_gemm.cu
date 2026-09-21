@@ -19,8 +19,8 @@
 namespace {
 using namespace cute;
 
-template <int Bits, int TileM, int TileN, int K8, int WarpM, int WarpN,
-          int Stages>
+template <bool WithBias, int Bits, int TileM, int TileN, int K8, int WarpM,
+          int WarpN, int Stages>
 at::Tensor run(const at::Tensor &a, const at::Tensor &sa, const at::Tensor &b,
                const at::Tensor &sb, const c10::optional<at::Tensor> &bias) {
   using Element =
@@ -51,7 +51,8 @@ at::Tensor run(const at::Tensor &a, const at::Tensor &sa, const at::Tensor &b,
       cutlass::plus, float, float, cutlass::FloatRoundStyle::round_to_nearest>;
   using Mul0 = cutlass::epilogue::threadblock::Sm80EVT<Mul, Acc, Row>;
   using Mul1 = cutlass::epilogue::threadblock::Sm80EVT<Mul, Mul0, Col>;
-  using Sum = cutlass::epilogue::threadblock::Sm80EVT<Add, Mul1, Bias>;
+  using Sum = std::conditional_t<
+      WithBias, cutlass::epilogue::threadblock::Sm80EVT<Add, Mul1, Bias>, Mul1>;
   using Store = cutlass::epilogue::threadblock::VisitorAuxStore<
       Map, Output, cutlass::FloatRoundStyle::round_to_nearest,
       Stride<int64_t, _1, int64_t>>;
@@ -75,7 +76,12 @@ at::Tensor run(const at::Tensor &a, const at::Tensor &sa, const at::Tensor &b,
       {_0{}, _1{}, n}};
   typename Mul0::Arguments mul0{{}, row, {}};
   typename Mul1::Arguments mul1{mul0, col, {}};
-  typename Sum::Arguments sum{mul1, bias_args, {}};
+  typename Sum::Arguments sum = [&]() {
+    if constexpr (WithBias)
+      return typename Sum::Arguments{mul1, bias_args, {}};
+    else
+      return mul1;
+  }();
   typename Tree::Arguments callbacks{
       sum, {reinterpret_cast<Output *>(output.data_ptr()), {n, _1{}, m * n}}};
   typename Gemm::Arguments args(cutlass::gemm::GemmUniversalMode::kGemm,
@@ -94,37 +100,38 @@ at::Tensor run(const at::Tensor &a, const at::Tensor &sa, const at::Tensor &b,
   return output;
 }
 
-template <int Bits>
+template <int Bits, bool WithBias>
 at::Tensor dispatch_tactic(const at::Tensor &a, const at::Tensor &sa,
                            const at::Tensor &b, const at::Tensor &sb,
                            const c10::optional<at::Tensor> &bias,
                            int64_t tactic) {
   switch (tactic) {
   case 0:
-    return run<Bits, 64, 128, 64, 32, 64, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 64, 128, 64, 32, 64, 3>(a, sa, b, sb, bias);
   case 1:
-    return run<Bits, 128, 128, 64, 32, 64, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 128, 128, 64, 32, 64, 3>(a, sa, b, sb, bias);
   case 2:
-    return run<Bits, 64, 64, 64, 32, 32, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 64, 64, 64, 32, 32, 3>(a, sa, b, sb, bias);
   case 3:
-    return run<Bits, 128, 64, 64, 32, 32, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 128, 64, 64, 32, 32, 3>(a, sa, b, sb, bias);
   case 4:
-    return run<Bits, 64, 128, 128, 32, 64, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 64, 128, 128, 32, 64, 3>(a, sa, b, sb, bias);
   case 5:
-    return run<Bits, 128, 128, 64, 32, 64, 4>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 128, 128, 64, 32, 64, 4>(a, sa, b, sb, bias);
   case 6:
-    return run<Bits, 64, 256, 64, 32, 64, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 64, 256, 64, 32, 64, 3>(a, sa, b, sb, bias);
   case 7:
-    return run<Bits, 32, 128, 64, 32, 64, 3>(a, sa, b, sb, bias);
+    return run<WithBias, Bits, 32, 128, 64, 32, 64, 3>(a, sa, b, sb, bias);
   default:
     TORCH_CHECK(false, "Unknown integer GEMM tactic");
   }
 }
 
-at::Tensor integer_gemm_dispatch(const at::Tensor &a, const at::Tensor &sa,
-                                 const at::Tensor &b, const at::Tensor &sb,
-                                 const c10::optional<at::Tensor> &bias,
-                                 int64_t bits, int64_t tactic) {
+at::Tensor integer_gemm_checked(const at::Tensor &a, const at::Tensor &sa,
+                                const at::Tensor &b, const at::Tensor &sb,
+                                const c10::optional<at::Tensor> &bias,
+                                int64_t bits, int64_t tactic,
+                                bool specialized) {
   TORCH_CHECK(bits == 4 || bits == 8, "bits must be 4 or 8");
   TORCH_CHECK(a.is_cuda() && b.is_cuda() && sa.is_cuda() && sb.is_cuda(),
               "CUDA tensors required");
@@ -154,14 +161,35 @@ at::Tensor integer_gemm_dispatch(const at::Tensor &a, const at::Tensor &sa,
                     bias->size(0) == b.size(0),
                 "Invalid BF16 bias");
   c10::cuda::CUDAGuard guard(a.device());
-  return bits == 4 ? dispatch_tactic<4>(a, sa, b, sb, bias, tactic)
-                   : dispatch_tactic<8>(a, sa, b, sb, bias, tactic);
+  if (specialized && !bias)
+    return bits == 4 ? dispatch_tactic<4, false>(a, sa, b, sb, bias, tactic)
+                     : dispatch_tactic<8, false>(a, sa, b, sb, bias, tactic);
+  return bits == 4 ? dispatch_tactic<4, true>(a, sa, b, sb, bias, tactic)
+                   : dispatch_tactic<8, true>(a, sa, b, sb, bias, tactic);
+}
+
+at::Tensor integer_gemm_dispatch(const at::Tensor &a, const at::Tensor &sa,
+                                 const at::Tensor &b, const at::Tensor &sb,
+                                 const c10::optional<at::Tensor> &bias,
+                                 int64_t bits, int64_t tactic) {
+  return integer_gemm_checked(a, sa, b, sb, bias, bits, tactic, false);
+}
+
+at::Tensor integer_gemm_biasless(const at::Tensor &a, const at::Tensor &sa,
+                                 const at::Tensor &b, const at::Tensor &sb,
+                                 const c10::optional<at::Tensor> &bias,
+                                 int64_t bits, int64_t tactic) {
+  return integer_gemm_checked(a, sa, b, sb, bias, bits, tactic, true);
 }
 } // namespace
 TORCH_LIBRARY(robotics_integer, m) {
   m.def("gemm(Tensor a, Tensor sa, Tensor b, Tensor sb, Tensor? bias, int "
         "bits, int tactic) -> Tensor");
+  m.def("gemm_biasless(Tensor a, Tensor sa, Tensor b, Tensor sb, Tensor? bias, "
+        "int "
+        "bits, int tactic) -> Tensor");
 }
 TORCH_LIBRARY_IMPL(robotics_integer, CUDA, m) {
   m.impl("gemm", &integer_gemm_dispatch);
+  m.impl("gemm_biasless", &integer_gemm_biasless);
 }

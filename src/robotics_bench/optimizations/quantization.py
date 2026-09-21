@@ -54,6 +54,7 @@ def quantize_linears(
     group_qkv=False,
     group_gate_up=False,
     group_views=False,
+    biasless_epilogue=False,
 ):
     import torch
 
@@ -74,6 +75,7 @@ def quantize_linears(
                 bits=site_bits[n] if site_bits is not None else bits,
                 tactic=tactic,
                 pack_reuse=pack_reuse,
+                biasless_epilogue=biasless_epilogue,
             )
     elif precision == "fp8":
         from robotics_kernels.blackwell.fp8_linear import Fp8CutlassLinear
@@ -96,6 +98,7 @@ def quantize_linears(
         "tactic": tactic,
         "grouped": {},
         "pack_reuse": pack_reuse,
+        "biasless_epilogue": biasless_epilogue,
     }
     try:
         replacements = {}

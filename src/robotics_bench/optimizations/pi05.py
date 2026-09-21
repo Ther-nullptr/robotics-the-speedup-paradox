@@ -27,6 +27,7 @@ def optimize_pi05(model, config):
         "cuda_graph",
         "norm",
         "condition_cache",
+        "condition_projection_cache",
         "empty_image_cache",
         "projection_fusion",
         "shared_quant",
@@ -36,6 +37,7 @@ def optimize_pi05(model, config):
         "integer_qkv",
         "integer_gate_up",
         "integer_group_views",
+        "integer_biasless",
     }
     if "cuda_graph" in config.enabled and "flow_loop" not in config.enabled:
         raise ValueError(
@@ -56,6 +58,8 @@ def optimize_pi05(model, config):
 
     stack = ExitStack()
     p = Patches()
+    condition_values = {}
+    projection_caches = []
     report = {
         "switches": list(config.enabled),
         "precision": config.precision,
@@ -91,6 +95,7 @@ def optimize_pi05(model, config):
                     group_qkv="integer_qkv" in config.enabled,
                     group_gate_up="integer_gate_up" in config.enabled,
                     group_views="integer_group_views" in config.enabled,
+                    biasless_epilogue="integer_biasless" in config.enabled,
                     tactic=getattr(config, "tactic", 0),
                 )
             )
@@ -259,12 +264,15 @@ def optimize_pi05(model, config):
                     return x
                 finally:
                     mask_state.clear()
+                    if projection_caches:
+                        report["condition_projections"]["entries"] = sum(
+                            len(cache) for cache in projection_caches
+                        )
 
             p.bind(model, "sample_actions", sample)
         if "condition_cache" in config.enabled:
             if "flow_loop" not in config.enabled:
                 raise ValueError("condition_cache requires flow_loop")
-            condition_values = {}
             p.set(model, "_robotics_flow_step", 0)
             p.set(model, "_robotics_flow_steps", 0)
             original_suffix = model.embed_suffix
@@ -301,6 +309,28 @@ def optimize_pi05(model, config):
                 )
 
             p.bind(model, "embed_suffix", cached_suffix)
+        if "condition_projection_cache" in config.enabled:
+            from .constant_projection import ConstantProjectionCache
+
+            def eligible(condition):
+                return any(condition is value for value in condition_values.values())
+
+            for name, module in list(model.named_modules()):
+                if isinstance(module, gemma.GemmaRMSNorm) and module.dense is not None:
+                    cache = ConstantProjectionCache(module.dense.forward, eligible)
+                    projection_caches.append(cache)
+
+                    def project(dense, condition, cache=cache):
+                        return cache(condition)
+
+                    p.bind(module.dense, "forward", project)
+                    report["coverage"][name + ".condition_projection"] = (
+                        "immutable_timestep_projection_cache"
+                    )
+            report["condition_projections"] = {
+                "modules": len(projection_caches),
+                "entries": 0,
+            }
         if "cuda_graph" in config.enabled:
             # Native torch.tensor(Python-list, device='cuda') performs a host
             # transfer that cannot be captured. Build identical masks on device.
@@ -441,7 +471,16 @@ def optimize_pi05(model, config):
                         )
 
                     graph_call = CudaGraphCall(
-                        execute, retained_tensors=lambda: tuple(image_cache.values())
+                        execute,
+                        retained_tensors=lambda: (
+                            *image_cache.values(),
+                            *condition_values.values(),
+                            *(
+                                tensor
+                                for cache in projection_caches
+                                for tensor in cache.retained_tensors()
+                            ),
+                        ),
                     )
                 result = graph_call(*images, *img_masks, tokens, masks, noise)
                 report["graph"] = {

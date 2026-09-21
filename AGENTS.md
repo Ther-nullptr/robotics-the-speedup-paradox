@@ -57,3 +57,8 @@ python -m compileall -q tools benchmarks src
 每轮通过外部 `profile-visualizer` skill生成历史图和可审阅记录，包含变慢/数值失败的候选。skill只渲染实测数据，不启动GPU、不估造缺失比较。实验ledger、trace、输入和生成图留在 `runs/`；稳定代码、来源记录和命令说明进入Git。
 
 INT实现参照本仓独立FP副本的loader/Linear/pack/prepare/forward_packed分层；不导入父目录VLM代码。格式、scale、zero-point、pack版本和实际硬件后端显式区分，不能把INT4称为FP4。
+
+当前量化工作优先Cosmos；π0.5先处理text/LLM，diffusion/action expert暂缓。INT源码、
+CUDA实现和固定CUTLASS头文件均由robotics包内维护，不从外部VLM、QuaRot或Mini QServe
+目录加载。INT4允许较大动作偏差继续性能实验，仍需记录偏差、实际覆盖及任务结果；
+零成功时不生成成功条件任务加速比。每轮优先固定INT4/INT8完整调用，再开展渐进覆盖。

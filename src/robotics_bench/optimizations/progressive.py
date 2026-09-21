@@ -50,3 +50,37 @@ def cosmos_precision_map(names, tier):
         )
         result[original] = 4 if low else 8
     return result
+
+
+def cosmos_tier_variants(template, tiers=None):
+    """Construct a reproducible W8A8-to-W4A4 sweep without changing the workload."""
+    tiers = list(range(11) if tiers is None else tiers)
+    if (
+        template.scopes != ("dit",)
+        or template.precision not in ("bf16", "int8")
+        or template.quant_tier is not None
+    ):
+        raise ValueError(
+            "A progressive sweep requires a BF16/INT8 Cosmos dit template without a single tier"
+        )
+    if (
+        not tiers
+        or len(set(tiers)) != len(tiers)
+        or any(type(t) is not int or not 0 <= t <= 10 for t in tiers)
+    ):
+        raise ValueError("Select unique integer tiers from 0 to 10")
+    switches = list(template.enabled)
+    for switch in ("shared_quant", "activation_quant_fusion", "integer_pack_reuse"):
+        if switch not in switches:
+            switches.append(switch)
+    return [
+        {
+            "id": "w8a8" if tier == 0 else f"w4-t{tier}",
+            "precision": "int8",
+            "switches": switches,
+            "scopes": ["dit"],
+            "tactic": template.tactic,
+            "quant_tier": tier,
+        }
+        for tier in tiers
+    ]

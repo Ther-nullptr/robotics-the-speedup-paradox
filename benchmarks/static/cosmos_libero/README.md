@@ -149,5 +149,9 @@ sampler 和 DiT 执行代码；通用框架、VAE 和 attention 库仍为外部�
 优化默认关闭，可独立使用 `--enable modulation`、`--enable gated_residual` 和
 `--enable cuda_graph`。低精度用 `--precision int8 --quant-scope dit`，并可选
 `shared_quant`、`activation_quant_fusion`；INT4 属于单独的有损实验配置。
+`--enable modulation_quant` 在整数精度和 `modulation` 开启时，将调制与激活量化
+融合，保留原生LayerNorm。该开关默认关闭，需对照同精度完整推理时延。
+`--precision int8 --quant-scope dit --quant-tier N` 可选择渐进INT4覆盖；档位定义、
+完整推理扫描与同初态闭环入口见 [渐进量化协议](../../../docs/protocols/progressive-quantization.md)。
 推理计时、动作检查和自动图表见 [inference benchmark](../../inference/README.md)。
 单次 smoke 不代表整个任务集的质量已经验证。

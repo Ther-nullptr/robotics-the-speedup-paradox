@@ -44,10 +44,11 @@ def configuration(args, model="pi05"):
     ):
         raise ValueError("Integer preparation switches require int8 or int4 precision")
     allowed = (
-        set(SWITCHES) - {"modulation"}
+        set(SWITCHES) - {"modulation", "modulation_quant"}
         if model == "pi05"
         else {
             "modulation",
+            "modulation_quant",
             "gated_residual",
             "cuda_graph",
             "shared_quant",
@@ -56,6 +57,7 @@ def configuration(args, model="pi05"):
             "integer_pack_reuse",
             "integer_qkv",
             "integer_group_views",
+            "integer_biasless",
         }
     )
     if set(config.enabled) - allowed:

@@ -36,6 +36,11 @@ def parser():
     p.add_argument("--task", required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--gpu", required=True)
+    p.add_argument(
+        "--ablate-shared",
+        action="store_true",
+        help="Allow shared-switch ablations and measure a BF16 reference for each shared configuration",
+    )
     p.add_argument("--enable", action="append", choices=SWITCHES, default=[])
     p.add_argument(
         "--precision", choices=("bf16", "int8", "int4", "fp8", "fp4"), default="bf16"
@@ -47,6 +52,18 @@ def parser():
     )
     p.add_argument("--integer-tactic", type=int, choices=TACTIC_IDS, default=0)
     p.add_argument("--quant-tier", type=int, choices=range(11))
+    p.add_argument(
+        "--progressive-sweep",
+        action="store_true",
+        help="Cosmos appendix-inspired W8A8-to-W4A4 tier sweep",
+    )
+    p.add_argument(
+        "--progressive-tiers",
+        type=int,
+        choices=range(11),
+        nargs="+",
+        help="Subset of tiers; requires --progressive-sweep",
+    )
     p.add_argument(
         "--variants",
         type=Path,
@@ -198,7 +215,19 @@ def main(argv=None):
         args.quant_tier,
     )
     variants = json.loads(args.variants.read_text()) if args.variants else None
-    configurations = measurement_configurations(config, variants)
+    if args.progressive_tiers is not None and not args.progressive_sweep:
+        raise ValueError("--progressive-tiers requires --progressive-sweep")
+    if args.progressive_sweep:
+        if args.case != "cosmos_libero" or args.variants:
+            raise ValueError(
+                "Progressive sweep is a Cosmos LIBERO protocol and cannot be combined with --variants"
+            )
+        from robotics_bench.optimizations.progressive import cosmos_tier_variants
+
+        variants = cosmos_tier_variants(config, args.progressive_tiers)
+    configurations = measurement_configurations(
+        config, variants, allow_shared_variants=args.ablate_shared
+    )
     output = args.output_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
     os.environ.update(

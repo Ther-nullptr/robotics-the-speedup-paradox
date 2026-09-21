@@ -151,3 +151,44 @@ Diagnostic charts distinguish integer and floating matrix work, matrix reduction
 copy/cast, normalization, quantization and pointwise arithmetic. GPU duration
 sums remain separate from synchronized policy-service medians. Breakdowns with
 more than four profiles are paginated with their original anchor repeated.
+
+`integer_biasless` is an experimental specialized epilogue for Linear modules
+without bias; real bias uses the normal epilogue. It is independently switched
+and is not automatically selected from an insignificant timing difference.
+
+PI0.5 additionally supports `condition_projection_cache`, requiring
+`condition_cache` and `flow_loop`. It reuses adaptive-normalization projections
+of registered, immutable timestep embeddings. Observation-dependent hidden
+states are still recomputed. Weights and timestep-embedding settings must remain
+unchanged within the optimization context; reinstall the context after changing
+them. Graphs retain their condition/projection buffers through their lifetime.
+
+For experiments changing shared optimizations between variants, explicitly add
+`--ablate-shared`. The benchmark inserts a matching BF16 measurement for each
+distinct shared-switch set. Without it, mismatched shared switches are rejected.
+
+The [progressive quantization protocol](../../docs/protocols/progressive-quantization.md)
+defines Cosmos `--progressive-sweep`, single `--quant-tier` settings and the
+matched task-pilot entry `evaluate_cosmos.py`. The current adaptation retains
+BF16 as the full-precision reference and measures its own speedups.
+
+Current quantization work prioritizes Cosmos. PI0.5 uses `--quant-scope text`;
+its action expert/diffusion scope is deferred. Older scope-expansion measurements
+are exploratory records, not recommended presets.
+
+Cosmos has an experimental `modulation_quant` switch, used together with integer
+precision and `modulation`. It keeps the native LayerNorm reduction and fuses
+BF16 modulation with dynamic activation quantization, avoiding an intermediate
+BF16 activation write/read. Mixed tiers prepare only the formats needed by each
+consumer group. The packed carrier stays inside the owned model; the engine's
+CPU action interface is unchanged. Same-format action equality and complete
+policy timings must both be checked; faster producer microbenchmarks alone do
+not establish end-to-end benefit.
+
+To inspect the actual per-layer formats recorded by a completed tier sweep:
+
+```bash
+# Uses the optional Matplotlib CPU environment.
+python benchmarks/inference/render_progressive.py \
+  --input runs/optimization/cosmos/tier-sweep-001
+```
