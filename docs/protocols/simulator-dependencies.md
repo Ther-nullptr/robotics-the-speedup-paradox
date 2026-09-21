@@ -1,6 +1,6 @@
 # 模拟器源码修改、版本与协作
 
-本协议适用于 LIBERO、RoboCasa、RoboTwin、Kinetix、DOM 等第三方仿真环境。当前尚未引入模拟器源码、fork 或 submodule；下述目录是首次接入时的约定，不表示已经创建相应远端仓库。各后端的引擎、环境隔离与执行方式见 [多模拟器后端协议](simulator-backends.md)。
+本协议适用于 LIBERO、RoboCasa、RoboTwin、Kinetix、DOM 等第三方仿真环境。KINETIX/Jax2D的运行源码已按MIT许可迁入仓内私有包，来源见对应PROVENANCE；其余模拟器沿用显式外部源码，下面的fork/submodule目录仍是接入约定，不表示已创建远端fork。各后端的引擎、环境隔离与执行方式见 [多模拟器后端协议](simulator-backends.md)。
 
 建议先使用公开 API、adapter 或受支持的扩展；确实需要持续修改且许可允许分发的源码时，维护独立 fork，主仓以 submodule 固定提交。SDK、引擎与大型资产按其支持的方式独立安装。调度、实验和展示仍在主仓维护。
 

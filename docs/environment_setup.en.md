@@ -164,3 +164,7 @@ Completed runs write `episode-summary.md` and `.json`. Videos are disabled by de
 | Conda XML/Matplotlib reports `XML_SetReparseDeferralEnabled` | Check that Python and libexpat match; a local verification workaround is not a project-wide launcher requirement |
 
 Dependency checks, resource preparation and a successful GPU rollout establish different levels of readiness. Cross-machine installation still requires verifying upstream dependencies.
+
+## KINETIX dynamic case
+
+KINETIX uses an isolated Python 3.11/JAX runtime. The flow model, environment, Jax2D physics, twelve levels and small render textures are maintained in this repository; only checkpoint parameters and framework dependencies are external. Configure `ROBOTICS_KINETIX_PYTHON` and `ROBOTICS_KINETIX_POLICY_DIR`, then follow the [case guide](../benchmarks/dynamic/kinetix/README.md). The runtime requirement file records the tested library versions; a fresh-machine GPU installation has not yet been independently validated. No automatic model/data download occurs during evaluation.

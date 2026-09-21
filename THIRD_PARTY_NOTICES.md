@@ -51,3 +51,11 @@ reference; this is separate from model quality versus BF16.
 ## LingBot-VA and RoboTwin external execution
 
 The LingBot RoboTwin adapter calls [Robbyant/lingbot-va](https://github.com/Robbyant/lingbot-va) through a separate local worker, using its native NumPy/messagepack codec and model implementation. The inspected LingBot source is 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb; root licensing is Apache-2.0. RoboTwin/SAPIEN/cuRobo and model assets remain external dependencies under their own terms. No source, weights or assets from another user home directory are distributed here. The owned adapter records source identity, checks actual transformer/text-encoder parameter coverage, and restores the checkpoint shared-embedding alias when required by Transformers 5.
+
+## Owned RTC / Kinetix / Jax2D execution
+
+`src/robotics_bench/kinetix/flow_model.py` derives from Physical Intelligence's [real-time-chunking-kinetix](https://github.com/Physical-Intelligence/real-time-chunking-kinetix) at `9296f31d62d5bfeb5779dcb2f9bcf71ca37f448b`, under the [retained RTC MIT license](src/robotics_bench/kinetix/RTC_LICENSE).
+
+The private `native/kinetix` runtime, small textures and bundled level definitions retain their source provenance. Kinetix is pinned to `cf7453ea103fa0b77348af1a39f689c658161613`, copyright Michael Matthews, under the [retained Kinetix MIT license](src/robotics_bench/kinetix/KINETIX_LICENSE). The private Jax2D physics implementation comes from distribution version 1.0.0 under its [retained MIT license](src/robotics_bench/kinetix/JAX2D_LICENSE).
+
+[PROVENANCE.json](src/robotics_bench/kinetix/PROVENANCE.json) lists original file hashes and migration changes. Imports use repository-private names; inactive duplicate definitions and cloud/training serialization helpers were excluded. Model checkpoints remain external resources and are not redistributed. JAX, Flax and general runtime libraries remain separately installed dependencies. This migration does not assign a license to unrelated repository code.
