@@ -4,6 +4,8 @@
 
 CPU tools, downloads and model/simulator execution use separate environments. `requirements-dev.txt` installs CPU development dependencies. `pip install -e .` installs this repository's package only. There is no complete fresh-machine GPU installer yet.
 
+LingBot prioritizes a separate [RoboTwin case](../benchmarks/static/lingbot_robotwin/README.md), using existing local model and simulator environments. It is not a download-helper preset; its case guide documents paths, versions and the Transformers shared-embedding compatibility handling.
+
 ## 1. CPU environment
 
 Python 3.11 or 3.12 is recommended; package metadata requires Python 3.10 or later. From the repository root:

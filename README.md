@@ -4,7 +4,7 @@
 
 面向具身模型推理与闭环实验的基础设施：固定模型、任务和场景，比较同步执行、论文静态异步及后续轻量化方案，并统一记录成功率、控制步数和实验配置。
 
-**当前为开发预览。** 已有三个可运行静态 case；主要模型执行代码和可选算子在本仓维护，加载框架和模拟器仍依赖兼容外部源码。CPU 分析工具可独立使用。项目自身代码许可证尚待确定，第三方来源见 [许可与发布状态](THIRD_PARTY_NOTICES.md)。
+**当前为开发预览。** 已有四个可运行静态 case；主要模型执行代码和可选算子在本仓维护，加载框架和模拟器仍依赖兼容外部源码。CPU 分析工具可独立使用。项目自身代码许可证尚待确定，第三方来源见 [许可与发布状态](THIRD_PARTY_NOTICES.md)。
 
 ## 功能与验证范围
 
@@ -13,6 +13,7 @@
 | [π0.5＋LIBERO](benchmarks/static/pi05_libero/README.md) | 外部 LeRobot/VLASH evaluator 桥接；原精度 sync / `paper_async` | `libero_object` 各500回合：同步494/500，n′=2异步464/500 |
 | [Cosmos＋LIBERO](benchmarks/static/cosmos_libero/README.md) | 独立 engine、原生模拟器、单环境 runner；H=16 | 原生动作对齐；同一 object 任务同步137步、异步154步成功 |
 | [Cosmos＋RoboCasa](benchmarks/static/cosmos_robocasa/README.md) | 三相机输入、H=32、场景初始化核对；单环境运行 | `TurnOffMicrowave` 固定场景：同步277步、异步292步成功 |
+| [LingBot＋RoboTwin](benchmarks/static/lingbot_robotwin/README.md) | 独立模型worker、原生双臂环境、同步KV/VAE历史更新；仅本地资源 | adjust_bottle单回合115条控制指令成功；论文异步尚未接入 |
 | [推理优化](benchmarks/inference/README.md) | 本仓模型热路径；独立BF16融合、CUDA Graph、INT4/INT8开关；逐轮图表 | Ada算子测试、固定输入动作校验与单回合闭环；量化全量质量待验证 |
 | [资源准备](tools/RESOURCE_PREPARATION.md) | 下载或复用 checkpoint、tokenizer、统计量、T5；训练数据按需下载 | 两类模型本地资源复用、真实小文件下载、启动预检 |
 | [实验统计](tools/summarize_experiment.py) | 成功率、失败按预算惩罚的总体步数、仅成功步数；按任务汇总 | CLI 与实验结束时自动调用 |
@@ -21,7 +22,7 @@
 
 Cosmos 数字是单回合闭环结果，不能代替全任务集成功率。表中π0.5全量结果来自原始基线，不能转用于新优化配置；任务、初态和采样配置见对应case说明。量化按显式模块范围启用，尚无通过全量质量验收的量化预设。完整policy调用时延比与论文控制周期加速比分别报告。
 
-LingBot-VA、DynamicVLA＋DOM 和 Kinetix 仍在规划中。静态与动态任务分别组织，模型和模拟器按已验证的 case 绑定；接口形状兼容不代表任意组合可用。
+LingBot优先适配RoboTwin同步任务；DynamicVLA＋DOM和Kinetix仍在规划中。静态与动态任务分别组织，模型和模拟器按已验证的 case 绑定；接口形状兼容不代表任意组合可用。
 
 ## 快速开始：CPU 工具
 

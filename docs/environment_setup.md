@@ -4,6 +4,8 @@
 
 本仓库将CPU工具、资源下载与模型/模拟器运行分开。`requirements-dev.txt` 用于CPU开发；`pip install -e .` 仅安装本仓Python包。GPU环境需要对应case的兼容外部源码和依赖，当前没有统一的一键新机安装器。
 
+LingBot优先通过 [RoboTwin独立case](../benchmarks/static/lingbot_robotwin/README.md) 接入，复用已有模型端和仿真端环境。该入口仅接受本地资源，未加入通用下载工具的case列表；具体版本、路径和Transformers共享embedding兼容处理见case说明。
+
 ## 1. CPU工具环境
 
 建议Python 3.11或3.12；Python包元数据的最低版本为3.10。在仓库根目录运行：

@@ -4,6 +4,8 @@
 
 本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。模型主要执行路径已迁入本仓，支持独立融合开关和INT4/INT8后端；量化全量任务质量尚待验证。动态任务与通用模型服务仍属于后续方向。
 
+[LingBot＋RoboTwin](../benchmarks/static/lingbot_robotwin/README.md) 使用独立模型worker和本机WebSocket，另有 `lingbot_runner.py` 保留执行后更新KV/VAE缓存的原生同步语义；它不走Cosmos的无状态动作块循环，也尚未提供paper_async。
+
 ## 1. 以case组织实验
 
 每个case明确绑定模型、checkpoint、预处理、任务、模拟器版本和控制协议。静态与动态任务分开维护，模型与模拟器不展开笛卡尔积。Cosmos两个case复用引擎代码，但分别使用自己的权重、统计量、输入相机、动作块长度和运行环境。
@@ -13,7 +15,8 @@
 | `pi05_libero` | 外部evaluator调用本仓PI0.5执行代码；可显式选native参考 | 本仓桥接、初态适配、加载/覆盖审计 | 原始基线object同步/异步各500回合；新优化仅固定输入和单回合验证 |
 | `cosmos_libero` | 本仓 `CosmosEngine(suite="libero")` | 原生LIBERO adapter＋共享静态runner | 可运行；固定输入对齐和单回合GPU验证 |
 | `cosmos_robocasa` | 本仓 `CosmosEngine(suite="robocasa")` | 原生RoboCasa adapter＋共享静态runner | 可运行；固定场景同步/异步GPU验证 |
-| DynamicVLA＋DOM、Kinetix、LingBot-VA | 待接入 | 各自保留任务与执行协议 | 规划中 |
+| `lingbot_robotwin` | 外部LingBot模型worker＋本仓客户端 | RoboTwin原生双臂控制与观测/cache更新循环 | 单任务同步GPU验证 |
+| DynamicVLA＋DOM、Kinetix | 待接入 | 各自保留任务与执行协议 | 规划中 |
 
 ## 2. 当前模块关系
 

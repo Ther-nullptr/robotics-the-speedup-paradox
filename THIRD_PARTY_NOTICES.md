@@ -47,3 +47,7 @@ float32 scales, BF16 output, model-independent tactics, framework-owned workspac
 and current-stream execution. CUTLASS remains an explicit external build
 dependency under its own license. Integer tests compare the quantized mathematical
 reference; this is separate from model quality versus BF16.
+
+## LingBot-VA and RoboTwin external execution
+
+The LingBot RoboTwin adapter calls [Robbyant/lingbot-va](https://github.com/Robbyant/lingbot-va) through a separate local worker, using its native NumPy/messagepack codec and model implementation. The inspected LingBot source is 7c6ffa9bfc4b83582cafc860fab4c82cc7deeeeb; root licensing is Apache-2.0. RoboTwin/SAPIEN/cuRobo and model assets remain external dependencies under their own terms. No source, weights or assets from another user home directory are distributed here. The owned adapter records source identity, checks actual transformer/text-encoder parameter coverage, and restores the checkpoint shared-embedding alias when required by Transformers 5.

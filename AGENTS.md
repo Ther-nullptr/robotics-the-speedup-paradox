@@ -57,3 +57,7 @@ python -m compileall -q tools benchmarks src
 每轮通过外部 `profile-visualizer` skill生成历史图和可审阅记录，包含变慢/数值失败的候选。skill只渲染实测数据，不启动GPU、不估造缺失比较。实验ledger、trace、输入和生成图留在 `runs/`；稳定代码、来源记录和命令说明进入Git。
 
 INT实现参照本仓独立FP副本的loader/Linear/pack/prepare/forward_packed分层；不导入父目录VLM代码。格式、scale、zero-point、pack版本和实际硬件后端显式区分，不能把INT4称为FP4。
+
+## LingBot＋RoboTwin
+
+LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。模型和仿真使用独立本地环境；当前只支持原生同步cache协议，禁止把WebSocket async命名当成paper_async。首次执行16条指令，后续完整块32条，每4条采样实际观测更新KV/VAE；终止/预算截断不更新未执行动作。`primitive_steps` 是RoboTwin接受的take_action指令数，不是250Hz物理tick。此入口默认复用显式提供的本地checkpoint、模拟器资产和环境；执行时不自动下载，输出写入调用者目录，不修改共享资源。
