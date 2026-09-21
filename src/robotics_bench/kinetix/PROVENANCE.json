@@ -19,7 +19,8 @@
     "Formatting follows this repository; original algorithms are retained.",
     "Only the runtime import closure is included; GUI/editor, PPO models and training drivers are excluded.",
     "Level saving helpers are reduced to native local loading; cloud/training serialization is excluded.",
-    "Removed the shadowed first AutoReplayWrapper definition; the effective upstream class is retained."
+    "Removed the shadowed first AutoReplayWrapper definition; the effective upstream class is retained.",
+    "Research branch: PhysicsEngine.step optionally accepts sampled motor impulses for physical timestep studies; the default motor path is unchanged and checked against the committed native engine."
   ],
   "files": [
     {

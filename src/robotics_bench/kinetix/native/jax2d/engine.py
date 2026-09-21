@@ -857,7 +857,13 @@ class PhysicsEngine:
 
         return rr_manifolds, cr_manifolds, cc_manifolds
 
-    def step(self, state: SimState, params: SimParams, actions: jnp.ndarray):
+    def step(
+        self,
+        state: SimState,
+        params: SimParams,
+        actions: jnp.ndarray,
+        motor_impulses=None,
+    ):
         chex.assert_shape(
             actions,
             (self.static_sim_params.num_joints + self.static_sim_params.num_thrusters,),
@@ -889,9 +895,14 @@ class PhysicsEngine:
             r1 = select_shape(state, revolute_joint.a_index, self.static_sim_params)
             r2 = select_shape(state, revolute_joint.b_index, self.static_sim_params)
 
-            a_drv, b_drv = apply_motor(
-                r1, r2, revolute_joint, motor_actions[revolute_joint_index], params
-            )
+            if motor_impulses is None:
+                a_drv, b_drv = apply_motor(
+                    r1, r2, revolute_joint, motor_actions[revolute_joint_index], params
+                )
+            else:
+                # Research: an externally sampled motor controller can hold
+                # its impulse across actual finer physics integration steps.
+                a_drv, b_drv = motor_impulses[revolute_joint_index]
             return (
                 revolute_joint.a_index,
                 revolute_joint.b_index,
