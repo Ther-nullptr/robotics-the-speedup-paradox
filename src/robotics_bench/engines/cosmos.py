@@ -1,6 +1,6 @@
 """Optional Cosmos Policy engine for explicitly selected static cases."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import gc
 import importlib
 import io
@@ -466,18 +466,29 @@ class CosmosEngine:
         ):
             raise ValueError("proprio must contain nine finite native values")
         native_observation["proprio"] = proprio.copy()
-        result = self._backend.utils.get_action(
-            self._cfg,
-            self._model,
-            self._stats,
-            native_observation,
-            self._embeddings[task],
-            seed=sampling_seed,
-            randomize_seed=False,
-            num_denoising_steps_action=self.num_inference_steps,
-            generate_future_state_and_value_in_parallel=False,
-            batch_size=1,
-        )
+        action_context = getattr(self._model, "_robotics_action_only_context", None)
+        with (
+            action_context(
+                suite=self.suite,
+                action_horizon=self.action_horizon,
+                image_keys=self.image_keys,
+                use_proprio=self._cfg.use_proprio,
+            )
+            if action_context is not None
+            else nullcontext()
+        ):
+            result = self._backend.utils.get_action(
+                self._cfg,
+                self._model,
+                self._stats,
+                native_observation,
+                self._embeddings[task],
+                seed=sampling_seed,
+                randomize_seed=False,
+                num_denoising_steps_action=self.num_inference_steps,
+                generate_future_state_and_value_in_parallel=False,
+                batch_size=1,
+            )
         try:
             actions = np.array(result["actions"], copy=True)
         finally:

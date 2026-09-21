@@ -24,6 +24,8 @@ COSMOS_HOTSPOT_SWITCHES = (
     "vae_norm_fusion",
     "vae_silu_fusion",
     "vae_spatial_padding",
+    "vae_condition_prefix",
+    "cross_kv_cache",
 )
 
 PRECISION_SWITCHES = {

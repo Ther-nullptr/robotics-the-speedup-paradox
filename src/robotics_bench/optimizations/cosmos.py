@@ -82,6 +82,12 @@ def optimize_cosmos(model, config):
     try:
         import torch
 
+        if "vae_condition_prefix" in config.enabled:
+            from .cosmos_prefix import optimize_conditioning_prefix
+
+            report["vae_condition_prefix"] = stack.enter_context(
+                optimize_conditioning_prefix(model)
+            )
         report["cudnn"] = {
             name: getattr(torch.backends.cudnn, name, None)
             for name in (
@@ -234,6 +240,20 @@ def optimize_cosmos(model, config):
                             "formats": list(formats),
                             "backend": "fused_modulation_pack",
                         }
+        cross_cache = None
+        if "cross_kv_cache" in config.enabled:
+            from .cosmos_kv_cache import cache_cross_attention
+
+            cross_cache = stack.enter_context(cache_cross_attention(model))
+            report["cross_kv_cache"] = cross_cache.report
+
+        def prepare_cross(args, kwargs):
+            if cross_cache is not None:
+                context = kwargs.get(
+                    "crossattn_emb", args[2] if len(args) > 2 else None
+                )
+                cross_cache.prepare(context)
+
         if "cuda_graph" in config.enabled:
             import torch
             from torch.utils import _pytree
@@ -246,6 +266,7 @@ def optimize_cosmos(model, config):
 
             def forward(module, *args, **kwargs):
                 nonlocal graph, previous_spec, previous_constants
+                prepare_cross(args, kwargs)
                 leaves, spec = _pytree.tree_flatten((args, kwargs))
                 tensor_indices = [
                     i for i, x in enumerate(leaves) if isinstance(x, torch.Tensor)
@@ -255,6 +276,8 @@ def optimize_cosmos(model, config):
                 constants = tuple(
                     (i, x) for i, x in enumerate(leaves) if i not in tensor_indices
                 )
+                if cross_cache is not None:
+                    constants += (("cross_kv_layout", cross_cache.layout_generation),)
                 if (
                     graph is None
                     or previous_spec != spec
@@ -268,12 +291,25 @@ def optimize_cosmos(model, config):
                         a, k = _pytree.tree_unflatten(combined, spec)
                         return original(*a, **k)
 
-                    graph = CudaGraphCall(execute)
+                    graph = CudaGraphCall(
+                        execute,
+                        retained_tensors=cross_cache.retained_tensors
+                        if cross_cache is not None
+                        else None,
+                    )
                     previous_spec = spec
                     previous_constants = constants
                 result = graph(*(leaves[i] for i in tensor_indices))
                 report["graph"] = {"captures": graph.captures, "replays": graph.replays}
                 return result
+
+            patches.bind(model.net, "forward", forward)
+        elif cross_cache is not None:
+            original = model.net.forward
+
+            def forward(module, *args, **kwargs):
+                prepare_cross(args, kwargs)
+                return original(*args, **kwargs)
 
             patches.bind(model.net, "forward", forward)
         yield report
