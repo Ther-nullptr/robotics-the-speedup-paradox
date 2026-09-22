@@ -62,3 +62,11 @@ INT实现参照本仓独立FP副本的loader/Linear/pack/prepare/forward_packed�
 CUDA实现和固定CUTLASS头文件均由robotics包内维护，不从外部VLM、QuaRot或Mini QServe
 目录加载。INT4允许较大动作偏差继续性能实验，仍需记录偏差、实际覆盖及任务结果；
 零成功时不生成成功条件任务加速比。每轮优先固定INT4/INT8完整调用，再开展渐进覆盖。
+
+## LingBot＋RoboTwin
+
+LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。模型和仿真使用独立本地环境；支持sync和paper_async；禁止把WebSocket async命名当成论文抽象。paper_async的n′范围0..16，每个名义关键帧k使用max(0,k−n′)的完整快照，负索引重复初始帧；原始预测动作缓存条件保持原位。不得只延迟推理请求而让KV/VAE读取较新的观测。首次执行16条指令，后续完整块32条，每4条采样实际观测更新KV/VAE；终止/预算截断不更新未执行动作。`primitive_steps` 是RoboTwin接受的take_action指令数，不是250Hz物理tick。此入口默认复用显式提供的本地checkpoint、模拟器资产和环境；执行时不自动下载，输出写入调用者目录，不修改共享资源。
+
+## KINETIX动态case
+
+`benchmarks/dynamic/kinetix` 是可运行入口，实际flow model、KINETIX环境和Jax2D源码在 `src/robotics_bench/kinetix/` 维护；不得重新导入参考仓库或已安装的顶层kinetix/jax2d包。外部只绑定checkpoint与Python框架环境。默认native-blend，原生dt/frame_skip/solver/碰撞参数固定；按processed actuator command混合，控制噪声对新旧候选同源，无初始prefetch，旧队列保留预测尾部。legacy-round只改变延迟映射，不能修改物理网格。zero/full-old/constant控制保留原生编译边界并通过逐值对齐；缩小物理时间片的研究在独立分支，不改主线默认参数。每个质量/延迟单元按相同seed列表评估，异常不计为策略失败；统计复用安装包内 `robotics_bench.statistics`，失败按预算惩罚。视频只补齐编码边缘，不改变模拟器。

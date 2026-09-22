@@ -17,6 +17,8 @@
 
 `paper_async` 是独立case manifest的标签，不加入或重定义通用v1 schema的schedule枚举。π0.5＋LIBERO使用 `overlap_actions=n′`，范围 `0≤n′≤n_action_steps`，默认执行长度n为5；入口映射到外部 `eval.async_delay`。论文附录B.1规定历史观测偏移，但未规定state和warmup；本case选择 `same_snapshot`（图像和state同源）及 `current_until_available`（历史不足时取当前观测），不得将这两项工程选择归于论文。[The Speedup Paradox，§3.1与B.1](https://arxiv.org/html/2606.28529v2)
 
+[LingBot＋RoboTwin](../../benchmarks/static/lingbot_robotwin/README.md) 的有状态扩展同时延迟KV/VAE观测流：名义关键帧k取max(0,k−n′)，负索引重复初始快照，保持观测时间单调；推理边界t的最新缓存观测为t−n′。原生首块执行16条、后续32条，n′限制在0..16。预测动作缓存条件沿用原始动作块，与测量state明确区分。该case仍串行执行，指令的物理时长可变，当前不据此生成固定Tact的论文加速比；具体约定随manifest和 `paper-async.json` 记录。
+
 论文§3.1 Eq.3的周期是 `C=Tinf+n*Tact−min(Tinf,n′*Tact)`。π0.5入口将其记录为 `paper_model`；默认 `Tact=1000/30 ms` 只是解析模型假设，不修改control/physics dt。`Tinf`必须显式提供并说明来源，缺少时不生成周期或加速比。宿主 `eval_s` 是实际程序耗时，不能代替论文C；历史观测模式的质量实验可独立运行。
 
 | clock / delay mode | 推理时环境如何推进 | 延迟来源 |
@@ -124,3 +126,9 @@ TISED 的分量拟合、选点与验证使用分开的配置/seed 或 held-out �
 | 可视化消费者卡住 | 控制逻辑继续，显示丢帧可计数 |
 
 前两项是静态论文异步的配置与模型估计要求；其余是后续实际时钟/队列调度器的验收规格。通用契约校验只覆盖字段与事件一致性，不能证明这些实际调度行为。π0.5入口已有模型smoke，覆盖范围以case记录为准；后续实际并发扩展可先用CPU fake clock/policy/simulator验证时间线。
+
+## KINETIX原生时间实现
+
+已实现的 [KINETIX case](../../benchmarks/dynamic/kinetix/README.md) 使用case专用 `kinetix-native-delay-run-v1` 产物，不冒充通用v1并行trace。默认native-blend保持物理dt、frame_skip、约束参数和控制边界终止判据；分数槽通过process后的执行器指令时间平均表示，不宣称精确重建槽内状态。初始旧队列为原生零动作，没有预取；宿主计算时间不叠加到虚拟release。每条控制记录新旧观测来源与各物理槽权重。
+
+legacy-round在相同原生物理网格下保留控制周期取整敏感性对照，但仍使用当前case的direct启动规则，不能与完整历史RTC预取曲线混称。物理时间片细分属于独立模拟器数值研究。

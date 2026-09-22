@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | 静态 | π0.5＋LIBERO | 已有object全量同步/论文异步；下一步为完整推理测量与经过质量验证的轻量化 |
 | 静态 | Cosmos-Policy＋LIBERO/RoboCasa | 已有独立单环境入口与GPU smoke；扩大任务覆盖，补齐完整环境安装与推理测量 |
-| 静态 | LingBot-VA | 先明确任务组合，再验证KV读写/reset与动作 |
+| 静态 | LingBot-VA＋RoboTwin | 已有sync/paper_async单任务GPU smoke及KV/VAE历史可见性协议；继续扩展任务覆盖 |
 | 动态 | DynamicVLA＋DOM | 单场景时钟、历史观测、延迟与动作生效、终止/reset |
-| 动态 | [Kinetix原生策略与rollout](../../benchmarks/dynamic/kinetix/README.md) | 绑定checkpoint/关卡和观测动作类型，再验证carry/PRNG、JAX步进、延迟与终止；独立于VLA执行器 |
+| 动态 | [Kinetix原生策略与rollout](../../benchmarks/dynamic/kinetix/README.md) | 已接入仓内flow/env/physics及native-blend；扩大配对评估，独立研究物理时间片变化的合理性 |
 | shared | 数据契约与CPU事件语义 | 按真实需求扩展契约；可手算的时间线与错误边界 |
 | shared | Trace viewer与分析工具 | 动作来源、时间映射、按case比较指标 |
 | 对应case / shared | 端侧优化 | 固定模型任务和设备profile；数值与完整入口证据，共享部分再抽取 |

@@ -4,6 +4,8 @@
 
 本仓库将CPU工具、资源下载与模型/模拟器运行分开。`requirements-dev.txt` 用于CPU开发；`pip install -e .` 仅安装本仓Python包。GPU环境需要对应case的兼容外部源码和依赖，当前没有统一的一键新机安装器。
 
+LingBot优先通过 [RoboTwin独立case](../benchmarks/static/lingbot_robotwin/README.md) 接入，复用已有模型端和仿真端环境。该入口仅接受本地资源，未加入通用下载工具的case列表；具体版本、路径和Transformers共享embedding兼容处理见case说明。
+
 ## 1. CPU工具环境
 
 建议Python 3.11或3.12；Python包元数据的最低版本为3.10。在仓库根目录运行：
@@ -17,7 +19,7 @@ python tools/compare_speedups.py --input examples/speedups/synthetic.json --mark
 python tools/embodied/trajectory_metrics.py --input tools/embodied/examples/smooth.csv
 ```
 
-CPU开发依赖为NumPy、jsonschema、pytest和Ruff，不包含Torch、CUDA或模拟器。绘图按需安装：
+CPU开发依赖为NumPy、SciPy、jsonschema、pytest和Ruff。SciPy用于RoboTwin末端位姿旋转组合的CPU检查；开发环境不包含Torch、CUDA或模拟器。绘图按需安装：
 
 ```bash
 python -m pip install -r tools/embodied/requirements-plot.txt
@@ -135,6 +137,20 @@ bash benchmarks/static/pi05_libero/run.sh \
   --output-dir runs/static/pi05_libero/sync-001 --dry-run
 ```
 
+### LingBot＋RoboTwin
+
+按 [case说明](../benchmarks/static/lingbot_robotwin/README.md) 配置模型和仿真两个Python环境，在env模板中填入已有源码、checkpoint和RoboTwin资产路径。该入口使用本地资源，不自动下载。
+
+```bash
+source .local/lingbot-robotwin.env
+bash benchmarks/static/lingbot_robotwin/run.sh \
+  --task adjust_bottle --episodes 1 --start-seed 10000 --model-seed 0 \
+  --schedule paper_async --overlap-actions 2 \
+  --output-dir runs/static/lingbot_robotwin/paper-async-001 --dry-run
+```
+
+LingBot的n′范围0..16，以控制指令计数；延迟同时应用于KV/VAE观测历史。默认是sync/0，切换回同步时同时去掉两个异步参数。
+
 先显式加载所选case的env文件，再运行对应命令。预检成功后去掉 `--dry-run`，添加 `--gpu 3`；按需添加 `--record-video`。切换论文异步使用 `--schedule paper_async --overlap-actions 2`。所有case的 `--episodes` 都是本次运行的总回合数；当前RoboCasa一次命令只选择一个任务和布局组合。
 
 全量π0.5 `libero_object` 使用 `--episodes 500 --batch-size 10`。RoboCasa对照可添加 `--reference-run` 检查与已完成baseline相同的初始化。完整参数和结果口径以各case文档为准。
@@ -167,3 +183,17 @@ bash benchmarks/static/pi05_libero/run.sh \
 | Conda中XML/Matplotlib导入报 `XML_SetReparseDeferralEnabled` | 检查Python与libexpat是否来自匹配环境；本机验证曾临时预加载配套库，这不是项目默认启动要求 |
 
 环境检查通过、资源完整和真实模型闭环成功是不同层级的验证。当前提供已验证组合与显式路径绑定，跨机器完整安装仍需要按外部项目依赖检查。
+
+## KINETIX动态实验环境
+
+KINETIX使用独立Python 3.11/JAX环境，模型、环境、Jax2D物理核心和12个关卡已迁入本仓；不需要外部源码路径。配置 `ROBOTICS_KINETIX_PYTHON` 和 `ROBOTICS_KINETIX_POLICY_DIR` 后即可运行。模型checkpoint仍为显式本地资源，入口不自动下载。
+
+```bash
+source .local/kinetix.env
+bash benchmarks/dynamic/kinetix/run.sh \
+  --levels car_launch --flow-steps 1,5 --latencies-ms 0,21.938 \
+  --episodes 1 --start-seed 0 --gpu 3 --validate-native \
+  --output-dir runs/dynamic/kinetix/demo-001
+```
+
+依赖版本、profile重放、录像和统计见 [KINETIX case](../benchmarks/dynamic/kinetix/README.md)。`--dry-run` 不需要JAX；`--record-video` 保存完整回合。物理dt/frame_skip固定在原生值，较细的延迟通过native-blend表示，不通过缩小物理步长实现。

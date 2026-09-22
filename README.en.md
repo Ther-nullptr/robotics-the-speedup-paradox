@@ -4,7 +4,7 @@
 
 Infrastructure for embodied-model inference and closed-loop experiments. Bind a model to a compatible task and simulator, compare synchronous execution and paper-style static asynchrony, and collect consistent success-rate and control-step results.
 
-**Development preview.** Three static cases are runnable. Core model execution paths and optional operators are maintained here; loading frameworks and simulators still require compatible external source. CPU analysis tools work independently. A license for this repository's own code has not yet been selected; see [third-party and release status](THIRD_PARTY_NOTICES.md).
+**Development preview.** Four static cases and one KINETIX dynamic case are runnable. Core model execution paths and optional operators are maintained here; loading frameworks and some simulators still require compatible external source; KINETIX execution source is owned here. CPU analysis tools work independently. A license for this repository's own code has not yet been selected; see [third-party and release status](THIRD_PARTY_NOTICES.md).
 
 ## Features and validation
 
@@ -13,6 +13,8 @@ Infrastructure for embodied-model inference and closed-loop experiments. Bind a 
 | [π0.5 + LIBERO](benchmarks/static/pi05_libero/README.md) | External LeRobot/VLASH evaluator bridge; original-precision sync and `paper_async` | 500 `libero_object` episodes per mode: 494/500 synchronous, 464/500 with n′=2 |
 | [Cosmos + LIBERO](benchmarks/static/cosmos_libero/README.md) | Separate engine, native simulator, single-environment runner; H=16 | Native action alignment; one object task succeeded in 137 sync / 154 async control steps |
 | [Cosmos + RoboCasa](benchmarks/static/cosmos_robocasa/README.md) | Three cameras, H=32, initialization matching, single-environment execution | Fixed `TurnOffMicrowave` scene succeeded in 277 sync / 292 async steps |
+| [LingBot + RoboTwin](benchmarks/static/lingbot_robotwin/README.md) | Separate model worker and bimanual simulator; sync / `paper_async` with delayed KV/VAE observations | Matched single-scene adjust_bottle episodes succeeded in 115 sync / 120 n′=2 async commands |
+| [KINETIX dynamic case](benchmarks/dynamic/kinetix/README.md) | Owned flow model, environment and Jax2D; paired flow-step/latency cells on native physics | Exact native endpoint checks on two levels; 8 GPU episodes, 7 successes and 1 failure |
 | [Inference optimization](benchmarks/inference/README.md) | Owned model hot paths; independent BF16 fusion, CUDA Graph and INT4/INT8 switches; per-round visualizations | Ada operator tests, fixed-input action checks and individual rollouts; quantized full-suite quality remains pending |
 | [Resource preparation](tools/RESOURCE_PREPARATION.md) | Download or reuse model resources; opt-in trajectory datasets | Local resource reuse, a real small-file download and launcher preflight |
 | [Experiment summaries](tools/summarize_experiment.py) | Success rate, failure-budget totals, success-only means and per-task summaries | Shared CLI and automatic end-of-run reports |
@@ -21,7 +23,7 @@ Infrastructure for embodied-model inference and closed-loop experiments. Bind a 
 
 The Cosmos results are individual episodes, not full-suite success rates. The π0.5 full-suite counts describe the original baseline and do not validate new optimization settings; case guides describe the evaluation setup. Quantization targets explicit module scopes and has no full-suite quality-approved preset yet. Complete policy-service speedups and paper-model control-period speedups are reported separately.
 
-LingBot-VA, DynamicVLA + DOM and Kinetix remain planned. Static and dynamic experiments use separate case protocols; model/simulator compatibility is established per case.
+LingBot prioritizes static RoboTwin tasks. KINETIX owns its JAX policy/environment/physics and supports native-blend latency replay. DynamicVLA + DOM remains planned. Static and dynamic experiments use separate case protocols; model/simulator compatibility is established per case.
 
 ## Quick start: CPU tools
 
