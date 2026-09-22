@@ -116,7 +116,7 @@ metric and are not substituted for these wall times.
 | Case / cohort | Original BF16 | Shared optimized BF16 | W8A8 | W4A4 |
 | --- | ---: | ---: | ---: | ---: |
 | LIBERO / `round8-shared-vae` | 436.52 | 381.94 | 214.36 | 167.12 |
-| RoboCasa / `round11-shared-vae` | 496.19 | 416.92 | Not measured in this cohort | 188.57 |
+| RoboCasa / `round12-precision-final` | 495.08 | 411.99 | 246.94 | 186.98 |
 
 All optimized columns include the declared VAE recipe. Within the LIBERO cohort,
 adding the VAE bundle to the preceding INT4 recipe reduced latency from 222.88
@@ -126,15 +126,22 @@ work fell from 46.85 to 24.33 ms and other elementwise work from 34.84 to 8.78 m
 The incremental result belongs to the VAE bundle, not to a separately isolated
 prefix or pointwise switch.
 
-RoboCasa's prefix-off/on INT4 comparison was 253.28 vs 188.57 ms, with VAE
+In the earlier `round11-shared-vae` cohort, RoboCasa's prefix-off/on INT4
+comparison was 253.28 vs 188.57 ms, with VAE
 pointwise fusion enabled on both sides. This revalidated the existing RoboCasa
 optimization after sharing the adapter; it is not another gain on top of its
 previously enabled prefix path. The fixed scenario was TurnOffMicrowave,
 layout/style 1/1, with the reset instruction "press the stop button on the microwave".
 
 The LIBERO snapshot used one saved observation and seeds 0/42/195; RoboCasa used
-three saved observations and those three seeds. VAE changes produced exact
-same-precision actions for all 3 and 9 checks respectively. The LIBERO timing
+three saved observations and those three seeds. The VAE-off/on comparisons in
+LIBERO round8 and RoboCasa round11 produced exact same-precision actions for
+all 3 and 9 checks respectively. The supplementary RoboCasa round12 confirms
+that all 280 candidate Linear sites use the INT8 or INT4 backend. INT8 is 2.005x
+faster than that round's original BF16 and 1.668x faster than its shared optimized
+BF16. Across its 9 checks, maximum action differences from original BF16 are
+0.418804 for INT8 and 1.107105 for INT4; the optimized BF16 actions are exact.
+Round12 does not independently isolate INT8 VAE-off/on equality. The LIBERO timing
 instruction was "put both the alphabet soup and the tomato sauce in the basket".
 These are bounded observations, not full-suite success rates or portable latency
 guarantees. Quantized task quality remains experimental.
