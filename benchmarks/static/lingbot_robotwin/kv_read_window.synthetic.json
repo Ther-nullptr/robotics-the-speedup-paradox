@@ -1,0 +1,17 @@
+{
+  "format": "lingbot-kv-read-window-input-v1",
+  "synthetic": true,
+  "enabled": true,
+  "max_latent_tokens": 2,
+  "max_action_tokens": 1,
+  "slots": [
+    {"slot": 0, "source": "latent", "generation": 0},
+    {"slot": 1, "source": "action", "generation": 0},
+    {"slot": 2, "source": "unknown", "generation": -1},
+    {"slot": 3, "source": "latent", "generation": 1},
+    {"slot": 4, "source": "latent", "generation": 2},
+    {"slot": 5, "source": "action", "generation": 2},
+    {"slot": 6, "source": "latent", "generation": 2},
+    {"slot": 7, "source": "action", "generation": 0, "current": true}
+  ]
+}
