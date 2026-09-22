@@ -29,7 +29,7 @@ Ampere和Ada共用同一个整数内核实现，显式tactic负责形状调优�
 | `graph.py` | 输入刷新、输出复制、目标设备 capture stream、失败恢复和常量所有权 | 每个实例串行调用；权重在上下文内不可变 |
 | `blackwell/` | 保留 FP4、tensor FP8、MXFP8、相关 mixed-input 及 CuTe 实现 | 独立来源记录；Blackwell 编译/模型性能尚待实机验证 |
 | `ampere_ada/convolution.py` | 仓内CUTLASS 2D/3D卷积，8个显式tactic，权重预打包、布局处理与bias epilogue | Ada实测；近似数值，不是无损替换；不支持的模块保持native并记录 |
-| `common/vae.py` | 保留原生通道归约，融合后续除法、scale、affine和可选SiLU | BF16逐值GPU检查及RoboCasa固定输入检查；不代表全任务集质量 |
+| `common/vae.py` | 保留原生通道归约，融合后续除法、scale、affine和可选SiLU | BF16逐值GPU检查及LIBERO/RoboCasa固定输入检查；不代表全任务集质量 |
 
 INT 的公开包装遵循 `from_linear → pack_input → forward_packed/forward` 生命周期。
 `forward_gelu` 将 GELU 或 gated GELU 与 activation pack 融合。激活按行、权重按输出
@@ -52,10 +52,16 @@ INT 的公开包装遵循 `from_linear → pack_input → forward_packed/forward
 `ampere_ada/modulation.py` 提供Cosmos的modulation与激活量化融合，保留原BF16
 中间舍入；内部packed carrier同时支持按需提供INT4/INT8，避免混合档位误用格式。
 模型外接口仍交付CPU动作，不向模拟器暴露packed数据。
+`norm_modulation_quant` 将LayerNorm也并入打包，`residual_norm_modulation_quant`
+进一步并入前置门控残差；新的FP32归约顺序可改变动作，二者是独立的数值实验开关，
+不属于保留原生归约的配方。它们与原调制打包共用当前文件中的格式和舍入边界。
 `integer_biasless` 为无bias层提供独立尾部处理实验路径；有bias时继续正常计算bias。
 
 目前量化迭代优先Cosmos，π0.5先限于text/LLM。动作专家/diffusion量化暂缓；
 已有可选scope不表示通过了相应任务质量验收。
+
+Cosmos本轮固定/渐进整数实现和共享VAE优化已完成阶段验证；启动配方、测量口径、
+默认关闭的实验选项和回退方式见 [Cosmos量化指南](../../docs/cosmos-quantization.md)。
 
 卷积的CUTLASS迭代器、分块、流水线与数值边界见
 [CONVOLUTION.md](ampere_ada/CONVOLUTION.md)。单算子调优收益必须回到完整policy复核；

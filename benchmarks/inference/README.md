@@ -5,6 +5,11 @@ a CPU action chunk. Model loading, weight packing, compilation, CUDA Graph
 capture and warmup are separate. Simulator/control-period timing is not included.
 All console output and generated report labels are English.
 
+For the completed Cosmos implementation phase, start with the
+[Cosmos quantization guide](../../docs/cosmos-quantization.md): supported integer
+formats, a shared LIBERO/RoboCasa recipe, measured snapshots, numerical limits
+and rollback. This page provides the detailed benchmark and switch interfaces.
+
 Model execution code is maintained in `src/robotics_bench/models/`. PI0.5 owns its
 PaliGemma/Gemma/SigLIP forwards; Cosmos owns its policy, sampler and DiT forwards.
 Common framework services, Cosmos VAE/attention libraries and simulator packages

@@ -5,6 +5,10 @@ Cosmos层选择规则。当前是本仓BF16基线上的实现，不复用论文�
 π0.5的固定INT4/INT8使用独立scope，不套用含cross-attention的Cosmos分层规则。
 当前量化调优优先Cosmos；π0.5先采用text/LLM scope，暂缓diffusion/action expert。
 
+本轮固定INT8/INT4、渐进覆盖及共享VAE优化的实现阶段已完成；入口和验证范围汇总于
+[Cosmos量化指南](../cosmos-quantization.md)。本协议仍用于声明精度覆盖和评估口径，
+阶段完成不代表所有档位已经通过全量任务质量验收。
+
 ## 固定的格式与候选集合
 
 候选为28个DiT block中的280个Linear：self-attention和cross-attention的Q/K/V/out，

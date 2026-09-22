@@ -127,6 +127,11 @@ sequenceDiagram
 
 优化默认关闭，通过重复 `--enable` 独立选择；精度由 `--precision` 和 `--quant-scope` 指定。INT4/INT8采用真实CUTLASS整数Tensor Core，融合准备、打包与必要转换均计入调用耗时。FP4/FP8保留独立Blackwell源码，尚未完成目标硬件验证。
 
+Cosmos的LIBERO/RoboCasa路径共用整数Linear、VAE逐点融合与前缀裁剪器。前缀适配器
+通过显式case表核对不同的条件帧、动作长度和相机契约；保留完整latent/噪声/DiT形状，
+仅跳过不参与动作条件的VAE编码后缀。该优化不保留辅助clean-latent后缀，不能用于
+消费该输出的规划/未来图像路径。阶段状态和可运行配方见 [Cosmos量化指南](cosmos-quantization.md)。
+
 图与缓存属于模型实例，要求串行调用且上下文内权重不变；变化的输入在每次调用刷新。PI0.5的缺失相机缓存只复用固定placeholder编码，不复用真实图像。关闭上下文会恢复原方法与模块。
 
 每轮重新测无优化BF16锚点，低精度再对照共享优化相同的BF16。计时从准备好的CPU观测到CPU动作块，加载、编译、图捕获与warmup单列；模拟器与控制周期另行统计。profile单独采集，GPU事件时长之和不替代墙钟延迟。固定输入逐值一致与任务成功率分开记录，变慢和数值失败的候选也保留在历史图中。

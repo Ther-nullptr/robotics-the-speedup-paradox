@@ -94,8 +94,8 @@ RoboCasa的 `--reference-run` 在首次推理前核对baseline初始化；不一
 ## 代码结构
 
 ```text
-benchmarks/static/             三个静态case的CLI、配置与生命周期
-benchmarks/dynamic/            动态case规划；尚无可运行实现
+benchmarks/static/             四个静态case的CLI、配置与生命周期
+benchmarks/dynamic/            KINETIX原生动态case；其他后端按独立任务扩展
 benchmarks/inference/          固定输入计时、数值比较与逐轮可视化
 src/robotics_bench/engines/     Cosmos模型加载、预处理与动作块推理
 src/robotics_bench/models/      本仓维护的PI0.5和Cosmos执行代码
@@ -127,3 +127,7 @@ Git只保留源码、必要配置、测试、稳定文档及小型合成样例�
 BF16/INT4/INT8 对照、固定输入动作校验及逐轮 profile-visualizer 图表。
 [算子说明](src/robotics_kernels/README.md)记录格式、构建与验证范围。FP4/FP8 为独立
 保留的 Blackwell 源码，目标硬件验证另行进行。所有运行结果仍保存在被忽略的 `runs/`。
+
+Cosmos 本轮固定 INT8/INT4、渐进覆盖与共享 VAE 优化已完成实现和性能验证。
+[Cosmos 量化指南](docs/cosmos-quantization.md)汇总可运行配方、LIBERO/RoboCasa
+复用边界、已有测量和回退方式；量化任务全集的质量仍待验证，所有开关默认关闭。

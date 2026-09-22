@@ -2,7 +2,7 @@
 
 [run.sh](run.sh) 运行一个固定任务和厨房布局，每次只推进一个环境。模型由共享 [CosmosEngine](../../../src/robotics_bench/engines/cosmos.py) 的 `suite=robocasa` 分支加载，环境由 [RoboCasa adapter](../../../src/robotics_bench/simulators/robocasa.py) 管理，同步和论文历史观测异步复用 [static_runner](../../../src/robotics_bench/protocols/static_runner.py)。
 
-策略输入是左、右外部相机及腕部相机的原始 RGB，加上9维 proprio。模型预测 H=32 个7维动作，默认执行前 n=16 个再请求下一块。`--quant` 仅支持 `none`，模型采用原生 BF16 推理。此入口提供动作生成，不启用 best-of-N 搜索或额外规划模型。
+策略输入是左、右外部相机及腕部相机的原始 RGB，加上9维 proprio。模型预测 H=32 个7维动作，默认执行前 n=16 个再请求下一块。默认采用 BF16；`--precision int8|int4 --quant-scope dit` 启用仓内整数推理，旧协议参数 `--quant` 保持 `none`。此入口提供动作生成，不启用 best-of-N 搜索或额外规划模型。
 
 ## 环境和资源
 
@@ -86,7 +86,7 @@ bash benchmarks/static/cosmos_robocasa/run.sh \
 
 视频默认关闭；`--record-video` 记录所有实际评估回合，`--no-record-video` 关闭。分辨率672×224，默认30 FPS 播放，播放帧率不改变仿真控制频率。
 
-已在 RTX 6000 Ada 上完成同一任务、layout/style=1/1、环境种子0、模型种子195、H=32/n=16/5步采样的两次 GPU 闭环：同步277步成功、18次请求；论文异步 n′=2 在292步成功、19次请求。加载与覆盖审计通过，异步初态比对通过，请求偏移为首轮0、其后2；视频分别为278和293帧。这些是单回合连通性结果，尚无24任务全量结果或模型推理加速比。
+已在 RTX 6000 Ada 上完成同一任务、layout/style=1/1、环境种子0、模型种子195、H=32/n=16/5步采样的两次 GPU 闭环：同步277步成功、18次请求；论文异步 n′=2 在292步成功、19次请求。加载与覆盖审计通过，异步初态比对通过，请求偏移为首轮0、其后2；视频分别为278和293帧。这些是原始接入阶段的单回合连通性结果，尚无24任务全量结果。后续独立的量化与 VAE 推理计时见 [Cosmos 量化指南](../../../docs/cosmos-quantization.md)，不将固定输入时延当作任务加速比。
 
 本入口也接受 `--model-runtime owned|native`、`--enable`、`--precision` 与
 `--integer-tactic`，量化范围固定为 `--quant-scope dit`。默认优化关闭。
@@ -97,3 +97,7 @@ RoboCasa 的新优化配置需要单独验证。推理工具见 [inference bench
 可通过 `benchmarks/inference/capture_robocasa.py` 捕获真实三相机观测，再比较
 BF16、INT8、INT4以及独立卷积、VAE逐元素融合、DiT attention后端开关。
 这些开关默认关闭，完整调用计时不含模拟器推进；模型任务质量需单独闭环验证。
+
+VAE 前缀裁剪与 LIBERO 共用同一适配器，RoboCasa 保留自己的41帧原始输入、11帧
+latent、5帧条件和三相机契约，在原生编码窗口下只执行前17帧。仅动作输出适用，
+辅助 clean-latent 后缀不保留。该选项与 VAE 归一化/SiLU 融合可分别回退。
