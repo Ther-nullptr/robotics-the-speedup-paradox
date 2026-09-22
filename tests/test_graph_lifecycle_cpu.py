@@ -54,7 +54,7 @@ def test_failed_recapture_keeps_previous_working_graph(monkeypatch):
         graph=capture,
     )
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(Tensor=Tensor, cuda=cuda))
-    path = Path(__file__).parents[1] / "src/robotics_kernels/graph.py"
+    path = Path(__file__).parents[1] / "src/robotics_kernels/common/graph.py"
     spec = importlib.util.spec_from_file_location("_graph_cpu_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

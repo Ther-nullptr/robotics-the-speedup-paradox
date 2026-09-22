@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# Robotics modifications: owned modulation/residual hooks and metadata-only
+# attention reshaping for optional packed integer activations.
 
 from __future__ import annotations
 
@@ -1580,6 +1582,7 @@ class Block(nn.Module):
         )
 
         video_size = VideoSize(T=T, H=H, W=W)
+        from robotics_bench.optimizations.cosmos import _attention_input
 
         # (ahassani): Hack to correct `video_size` when CP is enabled.
         # I really don't like this, but there doesn't seem to be any central
@@ -1592,7 +1595,7 @@ class Block(nn.Module):
         result_B_T_H_W_D = rearrange(
             self.self_attn(
                 # normalized_x_B_T_HW_D,
-                rearrange(normalized_x_B_T_H_W_D, "b t h w d -> b (t h w) d"),
+                _attention_input(normalized_x_B_T_H_W_D, (B, T * H * W)),
                 None,
                 rope_emb=rope_emb_L_1_1_D,
                 video_size=video_size,
@@ -1603,14 +1606,27 @@ class Block(nn.Module):
             h=H,
             w=W,
         )
-        from robotics_bench.optimizations.cosmos import _residual
+        from robotics_bench.optimizations.cosmos import _residual, _residual_modulation
 
-        x_B_T_H_W_D = _residual(
-            x_B_T_H_W_D,
-            result_B_T_H_W_D,
-            gate_self_attn_B_T_1_1_D,
-            getattr(self, "_robotics_residual", False),
-        )
+        cross_prepared = None
+        if getattr(self, "_robotics_residual_norm_quant", False):
+            x_B_T_H_W_D, cross_prepared = _residual_modulation(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_self_attn_B_T_1_1_D,
+                self.layer_norm_cross_attn,
+                scale_cross_attn_B_T_1_1_D,
+                shift_cross_attn_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+                getattr(self, "_robotics_modulation", False),
+            )
+        else:
+            x_B_T_H_W_D = _residual(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_self_attn_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+            )
 
         def _x_fn(
             _x_B_T_H_W_D,
@@ -1619,15 +1635,17 @@ class Block(nn.Module):
             _shift_cross_attn_B_T_1_1_D,
             _gate_cross_attn_B_T_1_1_D,
         ):
-            _normalized_x_B_T_H_W_D = _fn(
-                _x_B_T_H_W_D,
-                layer_norm_cross_attn,
-                _scale_cross_attn_B_T_1_1_D,
-                _shift_cross_attn_B_T_1_1_D,
-            )
+            _normalized_x_B_T_H_W_D = cross_prepared
+            if _normalized_x_B_T_H_W_D is None:
+                _normalized_x_B_T_H_W_D = _fn(
+                    _x_B_T_H_W_D,
+                    layer_norm_cross_attn,
+                    _scale_cross_attn_B_T_1_1_D,
+                    _shift_cross_attn_B_T_1_1_D,
+                )
             _result_B_T_H_W_D = rearrange(
                 self.cross_attn(
-                    rearrange(_normalized_x_B_T_H_W_D, "b t h w d -> b (t h w) d"),
+                    _attention_input(_normalized_x_B_T_H_W_D, (B, T * H * W)),
                     crossattn_emb,
                     rope_emb=rope_emb_L_1_1_D,
                 ),
@@ -1646,19 +1664,30 @@ class Block(nn.Module):
             shift_cross_attn_B_T_1_1_D,
             gate_cross_attn_B_T_1_1_D,
         )
-        x_B_T_H_W_D = _residual(
-            x_B_T_H_W_D,
-            result_B_T_H_W_D,
-            gate_cross_attn_B_T_1_1_D,
-            getattr(self, "_robotics_residual", False),
-        )
-
-        normalized_x_B_T_H_W_D = _fn(
-            x_B_T_H_W_D,
-            self.layer_norm_mlp,
-            scale_mlp_B_T_1_1_D,
-            shift_mlp_B_T_1_1_D,
-        )
+        if getattr(self, "_robotics_residual_norm_quant", False):
+            x_B_T_H_W_D, normalized_x_B_T_H_W_D = _residual_modulation(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_cross_attn_B_T_1_1_D,
+                self.layer_norm_mlp,
+                scale_mlp_B_T_1_1_D,
+                shift_mlp_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+                getattr(self, "_robotics_modulation", False),
+            )
+        else:
+            x_B_T_H_W_D = _residual(
+                x_B_T_H_W_D,
+                result_B_T_H_W_D,
+                gate_cross_attn_B_T_1_1_D,
+                getattr(self, "_robotics_residual", False),
+            )
+            normalized_x_B_T_H_W_D = _fn(
+                x_B_T_H_W_D,
+                self.layer_norm_mlp,
+                scale_mlp_B_T_1_1_D,
+                shift_mlp_B_T_1_1_D,
+            )
         result_B_T_H_W_D = self.mlp(normalized_x_B_T_H_W_D)
         x_B_T_H_W_D = _residual(
             x_B_T_H_W_D,

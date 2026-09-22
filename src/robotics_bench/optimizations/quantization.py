@@ -48,6 +48,13 @@ def quantize_linears(
     shared_quant=False,
     tactic=0,
     selector=pi05_scope,
+    grouped=False,
+    pack_reuse=False,
+    site_bits=None,
+    group_qkv=False,
+    group_gate_up=False,
+    group_views=False,
+    biasless_epilogue=False,
 ):
     import torch
 
@@ -63,7 +70,13 @@ def quantize_linears(
         bits = 8 if precision == "int8" else 4
 
         def make(m, n):
-            return IntegerLinear.from_linear(m, bits=bits, tactic=tactic)
+            return IntegerLinear.from_linear(
+                m,
+                bits=site_bits[n] if site_bits is not None else bits,
+                tactic=tactic,
+                pack_reuse=pack_reuse,
+                biasless_epilogue=biasless_epilogue,
+            )
     elif precision == "fp8":
         from robotics_kernels.blackwell.fp8_linear import Fp8CutlassLinear
 
@@ -83,6 +96,9 @@ def quantize_linears(
         "skipped": {},
         "shared_quant": shared_quant,
         "tactic": tactic,
+        "grouped": {},
+        "pack_reuse": pack_reuse,
+        "biasless_epilogue": biasless_epilogue,
     }
     try:
         replacements = {}
@@ -108,20 +124,59 @@ def quantize_linears(
             }
         if not replacements:
             raise ValueError("No eligible Linear modules in the selected scope")
-        if shared_quant:
+        if shared_quant or grouped or group_qkv or group_gate_up:
             if not precision.startswith("int"):
                 raise ValueError(
                     "Shared preparation currently supports integer backends"
                 )
-            for _, module in model.named_modules():
+            from robotics_kernels.ampere_ada.integer import (
+                IntegerProjectionGroup,
+                IntegerProjectionSlice,
+            )
+
+            for module_name, module in list(model.named_modules()):
                 attention_names = (
                     ("q_proj", "k_proj", "v_proj")
                     if getattr(module, "is_selfattn", True)
                     else ("k_proj", "v_proj")
                 )
-                for names in (attention_names, ("gate_proj", "up_proj")):
-                    siblings = [getattr(module, n, None) for n in names]
-                    if all(isinstance(m, IntegerLinear) for m in siblings):
+                for group_index, names in enumerate(
+                    (attention_names, ("gate_proj", "up_proj"))
+                ):
+                    group_this = grouped or (
+                        group_qkv if group_index == 0 else group_gate_up
+                    )
+                    compatible = {}
+                    for attr in names:
+                        m = getattr(module, attr, None)
+                        if isinstance(m, IntegerLinear):
+                            compatible.setdefault((m.bits, m.in_features), []).append(
+                                (attr, m)
+                            )
+                    for (bits, _), pairs in compatible.items():
+                        if len(pairs) < 2:
+                            continue
+                        siblings = [m for _, m in pairs]
+                        if group_this:
+                            group = IntegerProjectionGroup(
+                                siblings, contiguous_outputs=not group_views
+                            )
+                            key = f"_robotics_integer_group_{group_index}_{bits}"
+                            p.set(module, key, group)
+                            for index, (attr, _) in enumerate(pairs):
+                                p.set(
+                                    module, attr, IntegerProjectionSlice(group, index)
+                                )
+                            report["grouped"][module_name + "." + key] = {
+                                "members": [attr for attr, _ in pairs],
+                                "bits": bits,
+                                "in_features": group.linear.in_features,
+                                "out_features": list(group.sizes),
+                                "contiguous_outputs": not group_views,
+                            }
+                            continue
+                        if not shared_quant:
+                            continue
                         cache = ActivationCache(siblings[0].pack_input, len(siblings))
                         for m in siblings:
 

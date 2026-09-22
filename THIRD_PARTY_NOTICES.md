@@ -44,8 +44,13 @@ is pending; retaining source is not a performance claim on this Ada machine.
 The INT4/INT8 CUTLASS visitor-based GEMM design references the local QuaRot and
 Mini QServe prototypes. It independently defines symmetric integer packing,
 float32 scales, BF16 output, model-independent tactics, framework-owned workspace
-and current-stream execution. CUTLASS remains an explicit external build
-dependency under its own license. Integer tests compare the quantized mathematical
+and current-stream execution. Integer build headers are an unmodified CUTLASS
+snapshot at `982748aa7356fa838c2ea4994ddcb0b2a4b4cefa`, maintained inside
+`src/robotics_kernels/ampere_ada/third_party/cutlass/`. Only `include/`,
+`tools/util/include/` and the original `LICENSE.txt` are included, with source
+URL and per-file hashes in `PROVENANCE.json`. The runtime does not reuse another
+project's source or headers. CUTLASS retains its BSD-3-Clause and file-specific
+notices. Integer tests compare the quantized mathematical
 reference; this is separate from model quality versus BF16.
 
 ## LingBot-VA and RoboTwin external execution

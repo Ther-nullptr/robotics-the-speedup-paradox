@@ -94,8 +94,8 @@ RoboCasa's `--reference-run` verifies initialization against a completed baselin
 ## Repository layout
 
 ```text
-benchmarks/static/             CLI, configuration and lifecycle for three cases
-benchmarks/dynamic/            Planned dynamic cases
+benchmarks/static/             CLI, configuration and lifecycle for four cases
+benchmarks/dynamic/            Native KINETIX dynamic case and future backends
 benchmarks/inference/          Fixed-input timing, validation and per-round visuals
 src/robotics_bench/engines/     Cosmos loading, preprocessing and action inference
 src/robotics_bench/models/      Owned PI0.5 and Cosmos execution paths
@@ -119,6 +119,12 @@ optimization switches, matched BF16/low-precision comparisons, numerical checks
 and automatic profile-visualizer reports. The [operator guide](src/robotics_kernels/README.md)
 documents formats and build boundaries. FP4/FP8 sources are preserved independently
 for Blackwell; target-device validation is pending. Generated reports stay in ignored `runs/`.
+
+The current Cosmos fixed INT8/INT4, progressive-coverage and shared-VAE
+implementation phase is complete. The [Cosmos quantization guide](docs/cosmos-quantization.md)
+collects runnable recipes, LIBERO/RoboCasa boundaries, measured results and
+rollback instructions. Quantized full-suite quality remains unverified, and all
+optimization switches are disabled by default.
 
 ## Contributing and licensing
 

@@ -2,12 +2,55 @@
 
 from dataclasses import dataclass
 import math
+import re
 from statistics import median
+from robotics_kernels.ampere_ada.tactics import TACTIC_IDS
+from robotics_kernels.ampere_ada.convolution import TACTICS as CONVOLUTION_TACTICS
+
+ATTENTION_SWITCHES = {
+    "attention_sdpa_flash": "sdpa_flash",
+    "attention_sdpa_efficient": "sdpa_efficient",
+    "attention_sdpa_math": "sdpa_math",
+    "attention_flash_attn": "flash_attn",
+}
+CONVOLUTION_SWITCHES = {
+    **{f"conv_cutlass_{tactic}": tactic for tactic in CONVOLUTION_TACTICS},
+    **{f"conv_cutlass_c96_{tactic}": tactic for tactic in CONVOLUTION_TACTICS},
+    "conv_cutlass_c96": 0,
+}
+COSMOS_HOTSPOT_SWITCHES = (
+    *ATTENTION_SWITCHES,
+    *CONVOLUTION_SWITCHES,
+    "vae_norm_fusion",
+    "vae_silu_fusion",
+    "vae_spatial_padding",
+    "vae_condition_prefix",
+    "cross_kv_cache",
+)
+
+PRECISION_SWITCHES = {
+    "residual_norm_modulation_quant",
+    "norm_modulation_quant",
+    "modulation_quant",
+    "shared_quant",
+    "activation_quant_fusion",
+    "integer_grouped",
+    "integer_pack_reuse",
+    "integer_qkv",
+    "integer_gate_up",
+    "integer_group_views",
+    "integer_biasless",
+}
 
 SWITCHES = (
+    *COSMOS_HOTSPOT_SWITCHES,
+    "residual_norm_modulation_quant",
+    "norm_modulation_quant",
+    "modulation_quant",
     "flow_loop",
     "mask_cache",
     "condition_cache",
+    "condition_projection_cache",
     "empty_image_cache",
     "rope",
     "gated_residual",
@@ -18,6 +61,12 @@ SWITCHES = (
     "shared_quant",
     "modulation",
     "activation_quant_fusion",
+    "integer_grouped",
+    "integer_pack_reuse",
+    "integer_qkv",
+    "integer_gate_up",
+    "integer_group_views",
+    "integer_biasless",
 )
 
 
@@ -27,6 +76,7 @@ class OptimizationConfig:
     precision: str = "bf16"
     scopes: tuple[str, ...] = ("text",)
     tactic: int = 0
+    quant_tier: int | None = None
 
     def __post_init__(self):
         if not isinstance(self.switches, tuple):
@@ -35,27 +85,83 @@ class OptimizationConfig:
             raise ValueError("Unknown optimization switch")
         if len(set(self.switches)) != len(self.switches):
             raise ValueError("Duplicate optimization switch")
+        if "residual_norm_modulation_quant" in self.switches and not {
+            "norm_modulation_quant",
+            "gated_residual",
+        } <= set(self.switches):
+            raise ValueError(
+                "residual_norm_modulation_quant requires norm_modulation_quant and gated_residual"
+            )
+        if "norm_modulation_quant" in self.switches and (
+            not {"modulation", "modulation_quant"} <= set(self.switches)
+            or self.precision not in ("int4", "int8")
+            or self.scopes != ("dit",)
+        ):
+            raise ValueError(
+                "norm_modulation_quant requires modulation, modulation_quant, "
+                "INT4/INT8 and the Cosmos dit scope"
+            )
+        if len(set(self.switches) & ATTENTION_SWITCHES.keys()) > 1:
+            raise ValueError("Choose one attention backend per configuration")
+        if len(set(self.switches) & CONVOLUTION_SWITCHES.keys()) > 1:
+            raise ValueError("Choose one convolution tactic per configuration")
+        if (
+            "vae_silu_fusion" in self.switches
+            and "vae_norm_fusion" not in self.switches
+        ):
+            raise ValueError("vae_silu_fusion requires vae_norm_fusion")
         if not self.scopes or any(
             s not in ("text", "expert", "vision", "projector", "dit")
             for s in self.scopes
         ):
             raise ValueError("Unknown quantization scope")
-        if type(self.tactic) is not int or self.tactic not in (0, 1):
+        if type(self.tactic) is not int or self.tactic not in TACTIC_IDS:
             raise ValueError("Unknown integer tactic")
         if self.precision not in ("bf16", "int8", "int4", "fp8", "fp4"):
             raise ValueError("Unknown precision")
+        if "condition_projection_cache" in self.enabled and not {
+            "condition_cache",
+            "flow_loop",
+        } <= set(self.enabled):
+            raise ValueError(
+                "condition_projection_cache requires condition_cache and flow_loop"
+            )
+        if "integer_group_views" in self.enabled and not set(self.enabled) & {
+            "integer_grouped",
+            "integer_qkv",
+            "integer_gate_up",
+        }:
+            raise ValueError(
+                "integer_group_views requires an integer projection grouping switch"
+            )
+        if self.quant_tier is not None and (
+            type(self.quant_tier) is not int
+            or not 0 <= self.quant_tier <= 10
+            or self.precision != "int8"
+            or self.scopes != ("dit",)
+        ):
+            raise ValueError(
+                "Progressive tiers require INT8 base precision and the Cosmos dit scope"
+            )
+
+    @property
+    def precision_label(self):
+        return f"w4-t{self.quant_tier}" if self.quant_tier else self.precision
 
     @property
     def enabled(self):
         return self.switches
 
     def to_dict(self):
-        return {
+        data = {
             "switches": list(self.enabled),
             "precision": self.precision,
             "scopes": list(self.scopes),
             "tactic": self.tactic,
         }
+        if self.quant_tier is not None:
+            data["quant_tier"] = self.quant_tier
+        return data
 
 
 def _samples(values):
@@ -69,6 +175,72 @@ def _samples(values):
     ):
         raise ValueError("Timing samples must be nonempty finite positive numbers")
     return values
+
+
+def measurement_configurations(config, variants=None, *, allow_shared_variants=False):
+    """Build an explicit common-anchor cohort before loading the model."""
+    rows = [("original", OptimizationConfig())]
+    shared = tuple(s for s in config.enabled if s not in PRECISION_SWITCHES)
+    if variants is not None or config.precision != "bf16":
+        rows.append(
+            (
+                "optimized-bf16",
+                OptimizationConfig(shared, "bf16", config.scopes, config.tactic),
+            )
+        )
+    if variants is None:
+        return rows + [("candidate", config)]
+    if not isinstance(variants, list) or not variants:
+        raise ValueError("Variants must be a nonempty list")
+    used = {name for name, _ in rows}
+    shared_references = {frozenset(shared)}
+    allowed = {"id", "switches", "precision", "scopes", "tactic", "quant_tier"}
+    for data in variants:
+        if not isinstance(data, dict) or set(data) - allowed:
+            raise ValueError("Unknown variant fields")
+        name = data.get("id")
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name)
+            or name in used
+            or name.startswith("optimized-bf16-")
+        ):
+            raise ValueError(
+                "Variant IDs must be unique, safe filenames and not reference IDs"
+            )
+        current = OptimizationConfig(
+            tuple(data.get("switches", config.enabled)),
+            data.get("precision", config.precision),
+            tuple(data.get("scopes", config.scopes)),
+            data.get("tactic", config.tactic),
+            data.get("quant_tier", config.quant_tier),
+        )
+        current_shared = tuple(
+            s for s in current.enabled if s not in PRECISION_SWITCHES
+        )
+        if set(current_shared) != set(shared) and not allow_shared_variants:
+            raise ValueError(
+                "Variants must use the same shared optimization switches as their matched BF16 reference"
+            )
+        if set(
+            current.enabled
+        ) & PRECISION_SWITCHES and not current.precision.startswith("int"):
+            raise ValueError("Integer switches require integer precision")
+        if frozenset(current_shared) not in shared_references:
+            reference_id = f"optimized-bf16-{len(shared_references) + 1}"
+            rows.append(
+                (
+                    reference_id,
+                    OptimizationConfig(
+                        current_shared, "bf16", current.scopes, current.tactic
+                    ),
+                )
+            )
+            used.add(reference_id)
+            shared_references.add(frozenset(current_shared))
+        used.add(name)
+        rows.append((name, current))
+    return rows
 
 
 def compare_samples(baseline, candidate, *, exact, max_abs):

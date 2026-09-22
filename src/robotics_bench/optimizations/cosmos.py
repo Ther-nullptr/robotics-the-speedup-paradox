@@ -1,10 +1,36 @@
-"""Independent Cosmos DiT switches with native normalization preserved."""
+"""Independent Cosmos DiT switches with explicit numerical boundaries."""
 
 from contextlib import contextmanager, ExitStack
 from .patching import Patches
+from .config import ATTENTION_SWITCHES, CONVOLUTION_SWITCHES, COSMOS_HOTSPOT_SWITCHES
 
 
 def _modulation(x, norm, scale, shift, enabled):
+    formats = getattr(norm, "_robotics_quant_bits", ())
+    if formats:
+        from robotics_kernels.ampere_ada.modulation import (
+            PackedActivations,
+            prepare_modulation,
+            prepare_norm_modulation,
+        )
+
+        b, t, h, w, d = x.shape
+        scale = scale.reshape(b * t, 1, d).contiguous()
+        shift = shift.reshape(b * t, 1, d).contiguous()
+        if getattr(norm, "_robotics_norm_quant", False):
+            packs = {
+                bits: prepare_norm_modulation(
+                    x.reshape(b * t, h * w, d), scale, shift, bits, eps=norm.eps
+                )
+                for bits in formats
+            }
+        else:
+            y = norm(x)
+            packs = {
+                bits: prepare_modulation(y.reshape(b * t, h * w, d), scale, shift, bits)
+                for bits in formats
+            }
+        return PackedActivations(packs).with_leading_shape(x.shape[:-1])
     y = norm(x)
     if not enabled:
         return y * (1 + scale) + shift
@@ -16,6 +42,39 @@ def _modulation(x, norm, scale, shift, enabled):
         scale.reshape(b * t, 1, d).contiguous(),
         shift.reshape(b * t, 1, d).contiguous(),
     ).reshape_as(x)
+
+
+def _attention_input(value, leading_shape):
+    if getattr(value, "_robotics_packed_input", False):
+        return value.with_leading_shape(leading_shape)
+    return value.reshape(*leading_shape, value.shape[-1])
+
+
+def _residual_modulation(
+    x, y, gate, norm, scale, shift, residual_enabled, modulation_enabled
+):
+    formats = getattr(norm, "_robotics_quant_bits", ())
+    if getattr(norm, "_robotics_norm_quant", False) and len(formats) == 1:
+        from robotics_kernels.ampere_ada.modulation import (
+            PackedActivations,
+            prepare_residual_norm_modulation,
+        )
+
+        b, t, h, w, d = x.shape
+        result, packed = prepare_residual_norm_modulation(
+            x.reshape(b * t, h * w, d),
+            y.reshape(b * t, h * w, d).contiguous(),
+            gate.reshape(b * t, 1, d),
+            scale.reshape(b * t, 1, d),
+            shift.reshape(b * t, 1, d),
+            formats[0],
+            eps=norm.eps,
+        )
+        return result.reshape_as(x), PackedActivations(
+            {formats[0]: packed}
+        ).with_leading_shape(x.shape[:-1])
+    result = _residual(x, y, gate, residual_enabled)
+    return result, _modulation(result, norm, scale, shift, modulation_enabled)
 
 
 def _residual(x, y, gate, enabled):
@@ -36,11 +95,20 @@ def optimize_cosmos(model, config):
     from robotics_bench.models.cosmos import minimal_v4_dit as dit
 
     if set(config.enabled) - {
+        *COSMOS_HOTSPOT_SWITCHES,
         "modulation",
         "gated_residual",
         "cuda_graph",
         "shared_quant",
         "activation_quant_fusion",
+        "integer_grouped",
+        "integer_pack_reuse",
+        "integer_qkv",
+        "integer_group_views",
+        "integer_biasless",
+        "modulation_quant",
+        "norm_modulation_quant",
+        "residual_norm_modulation_quant",
     }:
         raise ValueError("Unsupported Cosmos optimization switch")
     patches = Patches()
@@ -51,6 +119,66 @@ def optimize_cosmos(model, config):
         "coverage": {},
     }
     try:
+        import torch
+
+        if "vae_condition_prefix" in config.enabled:
+            from .cosmos_prefix import optimize_conditioning_prefix
+
+            report["vae_condition_prefix"] = stack.enter_context(
+                optimize_conditioning_prefix(model)
+            )
+        report["cudnn"] = {
+            name: getattr(torch.backends.cudnn, name, None)
+            for name in (
+                "enabled",
+                "benchmark",
+                "benchmark_limit",
+                "deterministic",
+                "allow_tf32",
+            )
+        }
+        if "vae_spatial_padding" in config.enabled:
+            from .cosmos_vae_memory import optimize_vae_spatial_padding
+
+            # Enter before any CUTLASS weight plan snapshots module.padding.
+            report["vae_spatial_padding"] = stack.enter_context(
+                optimize_vae_spatial_padding(model.tokenizer.model.model.encoder)
+            )
+        for switch, backend in ATTENTION_SWITCHES.items():
+            if switch in config.enabled:
+                from .cosmos_attention import cosmos_attention_backend
+
+                report["attention"] = stack.enter_context(
+                    cosmos_attention_backend(model.net, backend)
+                )
+        if "vae_norm_fusion" in config.enabled:
+            from .cosmos_pointwise import optimize_vae_pointwise
+
+            report["vae_pointwise"] = stack.enter_context(
+                optimize_vae_pointwise(
+                    model.tokenizer.model.model,
+                    fuse_silu="vae_silu_fusion" in config.enabled,
+                )
+            )
+        for switch, tactic in CONVOLUTION_SWITCHES.items():
+            if switch in config.enabled:
+                from .cosmos_convolution import optimize_convolutions
+
+                report["convolution"] = stack.enter_context(
+                    optimize_convolutions(
+                        model.tokenizer.model.model,
+                        tactic=tactic,
+                        policy="c96"
+                        if switch.startswith("conv_cutlass_c96")
+                        else "all_supported",
+                    )
+                )
+        if "modulation_quant" in config.enabled and (
+            not config.precision.startswith("int") or "modulation" not in config.enabled
+        ):
+            raise ValueError(
+                "modulation_quant requires integer precision and modulation"
+            )
         for name, module in model.net.named_modules():
             if isinstance(module, dit.Block):
                 patches.set(
@@ -88,6 +216,12 @@ def optimize_cosmos(model, config):
                     shared_quant="shared_quant" in config.enabled,
                     tactic=config.tactic,
                     selector=selector,
+                    grouped="integer_grouped" in config.enabled,
+                    pack_reuse="integer_pack_reuse" in config.enabled,
+                    group_qkv="integer_qkv" in config.enabled,
+                    group_views="integer_group_views" in config.enabled,
+                    biasless_epilogue="integer_biasless" in config.enabled,
+                    site_bits=_tier_sites(model.net, selector, config.quant_tier),
                 )
             )
         if "activation_quant_fusion" in config.enabled:
@@ -107,6 +241,84 @@ def optimize_cosmos(model, config):
 
                     patches.bind(module, "forward", forward_mlp)
                     report["coverage"][name + ".activation"] = "fused_gelu_quant"
+        if "modulation_quant" in config.enabled:
+            from robotics_kernels.ampere_ada.integer import (
+                IntegerLinear,
+                IntegerProjectionSlice,
+            )
+
+            if model.net.training:
+                raise ValueError(
+                    "Modulation quantization is an inference-only optimization"
+                )
+            for name, module in model.net.named_modules():
+                if not isinstance(module, dit.Block):
+                    continue
+                patches.set(
+                    module,
+                    "_robotics_residual_norm_quant",
+                    "residual_norm_modulation_quant" in config.enabled,
+                )
+                boundaries = (
+                    (
+                        "layer_norm_self_attn",
+                        [
+                            module.self_attn.q_proj,
+                            module.self_attn.k_proj,
+                            module.self_attn.v_proj,
+                        ],
+                    ),
+                    ("layer_norm_cross_attn", [module.cross_attn.q_proj]),
+                    ("layer_norm_mlp", [module.mlp.layer1]),
+                )
+                for norm_name, consumers in boundaries:
+                    if all(
+                        isinstance(m, (IntegerLinear, IntegerProjectionSlice))
+                        for m in consumers
+                    ):
+                        formats = tuple(sorted({m.bits for m in consumers}))
+                        norm = getattr(module, norm_name)
+                        fuse_norm = "norm_modulation_quant" in config.enabled
+                        if fuse_norm and (
+                            type(norm) is not torch.nn.LayerNorm
+                            or norm.elementwise_affine
+                            or tuple(norm.normalized_shape) != (module.x_dim,)
+                            or norm.training
+                        ):
+                            raise ValueError(
+                                "Norm packing requires an eval non-affine LayerNorm"
+                            )
+                        patches.set(norm, "_robotics_quant_bits", formats)
+                        if fuse_norm:
+                            patches.set(norm, "_robotics_norm_quant", True)
+                        report["coverage"][name + "." + norm_name + ".quant"] = {
+                            "formats": list(formats),
+                            "backend": "fused_norm_modulation_pack"
+                            if fuse_norm
+                            else "fused_modulation_pack",
+                        }
+                        if (
+                            "residual_norm_modulation_quant" in config.enabled
+                            and norm_name != "layer_norm_self_attn"
+                            and len(formats) == 1
+                        ):
+                            report["coverage"][name + "." + norm_name + ".quant"][
+                                "backend"
+                            ] = "fused_residual_norm_modulation_pack"
+        cross_cache = None
+        if "cross_kv_cache" in config.enabled:
+            from .cosmos_kv_cache import cache_cross_attention
+
+            cross_cache = stack.enter_context(cache_cross_attention(model))
+            report["cross_kv_cache"] = cross_cache.report
+
+        def prepare_cross(args, kwargs):
+            if cross_cache is not None:
+                context = kwargs.get(
+                    "crossattn_emb", args[2] if len(args) > 2 else None
+                )
+                cross_cache.prepare(context)
+
         if "cuda_graph" in config.enabled:
             import torch
             from torch.utils import _pytree
@@ -119,6 +331,7 @@ def optimize_cosmos(model, config):
 
             def forward(module, *args, **kwargs):
                 nonlocal graph, previous_spec, previous_constants
+                prepare_cross(args, kwargs)
                 leaves, spec = _pytree.tree_flatten((args, kwargs))
                 tensor_indices = [
                     i for i, x in enumerate(leaves) if isinstance(x, torch.Tensor)
@@ -128,6 +341,8 @@ def optimize_cosmos(model, config):
                 constants = tuple(
                     (i, x) for i, x in enumerate(leaves) if i not in tensor_indices
                 )
+                if cross_cache is not None:
+                    constants += (("cross_kv_layout", cross_cache.layout_generation),)
                 if (
                     graph is None
                     or previous_spec != spec
@@ -141,7 +356,12 @@ def optimize_cosmos(model, config):
                         a, k = _pytree.tree_unflatten(combined, spec)
                         return original(*a, **k)
 
-                    graph = CudaGraphCall(execute)
+                    graph = CudaGraphCall(
+                        execute,
+                        retained_tensors=cross_cache.retained_tensors
+                        if cross_cache is not None
+                        else None,
+                    )
                     previous_spec = spec
                     previous_constants = constants
                 result = graph(*(leaves[i] for i in tensor_indices))
@@ -149,7 +369,34 @@ def optimize_cosmos(model, config):
                 return result
 
             patches.bind(model.net, "forward", forward)
+        elif cross_cache is not None:
+            original = model.net.forward
+
+            def forward(module, *args, **kwargs):
+                prepare_cross(args, kwargs)
+                return original(*args, **kwargs)
+
+            patches.bind(model.net, "forward", forward)
         yield report
     finally:
         stack.close()
         patches.restore()
+
+
+def _tier_sites(model, selector, tier):
+    if tier is None:
+        return None
+    import torch
+    from .progressive import cosmos_precision_map
+
+    candidates = [
+        (n, m)
+        for n, m in model.named_modules()
+        if isinstance(m, torch.nn.Linear) and selector(n) == "dit"
+    ]
+    if any(m.weight.dtype != torch.bfloat16 for _, m in candidates):
+        raise ValueError(
+            "Progressive tiers require all candidate Linear weights to start as BF16"
+        )
+    names = [n for n, _ in candidates]
+    return cosmos_precision_map(names, tier)

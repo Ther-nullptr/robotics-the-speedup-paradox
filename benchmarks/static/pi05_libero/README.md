@@ -188,6 +188,6 @@ LeRobot 提供配置/processor；checkpoint 和数据不复制到源码目录。
 图像的编码，并需要 `cuda_graph`。`projection_fusion` 是有舍入差异的实验候选。
 
 本仓低精度使用 `--precision int8 --quant-scope text` 等显式选项；整数准备可另外启用
-`shared_quant` 和 `activation_quant_fusion`。`--integer-tactic 0/1` 选择待比较的 kernel
+`shared_quant` 和 `activation_quant_fusion`。`--integer-tactic 0..7` 选择待比较的 kernel
 配置。旧 `--quant-ladder` 属于外部量化入口，不能与本仓优化混用。
 完整计时、数值检查与每轮图表见 [inference benchmark](../../inference/README.md)。

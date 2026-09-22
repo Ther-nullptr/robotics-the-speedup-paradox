@@ -2,7 +2,7 @@
 
 [run.sh](run.sh) 调用本仓库的 [run.py](run.py)，每次只推进一个原生 LIBERO 环境。模型加载与动作推理由 [CosmosEngine](../../../src/robotics_bench/engines/cosmos.py) 负责，[LIBERO adapter](../../../src/robotics_bench/simulators/libero.py) 负责任务、初态和环境生命周期，[静态 runner](../../../src/robotics_bench/protocols/static_runner.py) 负责动作执行与历史观测选择。外部源码由调用者提供，模型和模拟器资产可复用本地文件，或通过独立的 [资源准备工具](../../../tools/RESOURCE_PREPARATION.md) 下载；这些资源不进入 Git。
 
-当前接入原精度推理，`--quant` 仅接受 `none`。模型固定预测 H=16 个七维动作，`--n-action-steps` 指每块实际执行的前 n 个动作，默认 n=16，范围为 1..16。遇到成功、环境终止或步数预算时立即停止。
+默认采用 BF16；`--precision int8|int4 --quant-scope dit` 启用仓内整数推理。旧协议参数 `--quant` 保持 `none`，实际模型精度由 `--precision` 选择。模型固定预测 H=16 个七维动作，`--n-action-steps` 指每块实际执行的前 n 个动作，默认 n=16，范围为 1..16。遇到成功、环境终止或步数预算时立即停止。
 
 ## 配置路径与运行环境
 
@@ -134,9 +134,9 @@ manifest 使用独立 `cosmos-libero-run-v1` 格式，`requests.jsonl` 是本 ca
 
 已完成586项CPU测试及RTX 6000 Ada上的以下GPU检查：固定 `sample_libero_10_observation.pkl`、seed195时，新引擎与原生动作接口输出完全相等（16×7、float64、最大绝对误差0）；LIBERO-object任务0、初态0、环境seed0、H=n=16、5步采样下，同步episode在137个控制步成功，`paper_async n′=2` 在154步成功。两次加载与覆盖审计通过；异步请求记录确认首轮使用当前观测，后续回看2个原始控制步；录像为256×256、30 FPS、155帧，含初始和终止画面。
 
-这些是固定输入对齐和单episode闭环连通性证据，不是完整任务集成功率或性能结论。未采集可比较的推理profile，因此不报告论文加速比。全模型量化及其他LIBERO任务的闭环尚未验证；RoboCasa的独立验证范围见 [对应case](../cosmos_robocasa/README.md)。
+以上是原始接入阶段的固定输入对齐和单episode闭环证据，不是完整任务集成功率。后续已有独立的 DiT INT8/INT4 完整调用计时和 profile，见 [Cosmos 量化指南](../../../docs/cosmos-quantization.md)；这些推理时延不直接当作论文任务加速比。量化全任务集质量尚未验证；RoboCasa的独立验证范围见 [对应case](../cosmos_robocasa/README.md)。
 
-Cosmos 接入在基线 `1a4983e` 之后扩展，保留该基线已有的 π0.5 功能及其独立入口。模型实现依然来自调用者指定的外部源码。当前本机检查使用的 Cosmos 源码副本没有 `.git`，不能标为某个纯上游 commit：计划记录 Python 源码树 SHA-256 与 `git_available=false`，有可用 Git 信息时才记录真实 commit/dirty 身份。资源文件、本仓执行代码和选项共同进入 case 指纹。
+Cosmos 接入在基线 `1a4983e` 之后扩展，保留该基线已有的 π0.5 功能及其独立入口。默认执行本仓维护的 policy、sampler 和 DiT，加载框架及 VAE/attention 依赖仍来自调用者指定的兼容外部源码。已验证外部源码副本缺少 `.git`，不能标为某个纯上游 commit：计划记录 Python 源码树 SHA-256 与 `git_available=false`，有可用 Git 信息时才记录真实 commit/dirty 身份。资源文件、本仓执行代码和选项共同进入 case 指纹。
 
 来源与条款边界见 [第三方记录](../../../THIRD_PARTY_NOTICES.md)；模型、任务、调度和时间口径分别遵循 [模型接入](../../../docs/protocols/model-adapters.md)、[仿真协议](../../../docs/protocols/simulation.md) 与 [加速比协议](../../../docs/protocols/speedup-metrics.md)。
 
@@ -149,5 +149,14 @@ sampler 和 DiT 执行代码；通用框架、VAE 和 attention 库仍为外部�
 优化默认关闭，可独立使用 `--enable modulation`、`--enable gated_residual` 和
 `--enable cuda_graph`。低精度用 `--precision int8 --quant-scope dit`，并可选
 `shared_quant`、`activation_quant_fusion`；INT4 属于单独的有损实验配置。
+`--enable modulation_quant` 在整数精度和 `modulation` 开启时，将调制与激活量化
+融合，保留原生LayerNorm。该开关默认关闭，需对照同精度完整推理时延。
+`--precision int8 --quant-scope dit --quant-tier N` 可选择渐进INT4覆盖；档位定义、
+完整推理扫描与同初态闭环入口见 [渐进量化协议](../../../docs/protocols/progressive-quantization.md)。
 推理计时、动作检查和自动图表见 [inference benchmark](../../inference/README.md)。
 单次 smoke 不代表整个任务集的质量已经验证。
+
+`vae_norm_fusion`、`vae_silu_fusion` 和 `vae_condition_prefix` 复用与 RoboCasa
+相同的 VAE 实现。LIBERO 在原生16帧编码窗口下执行33帧中的前17帧，保留完整9帧
+latent/噪声/DiT形状；该优化仅保证声明范围内的动作输出，不保留辅助 clean-latent
+后缀。完整命令、实测口径和实验性选项见 [Cosmos 量化指南](../../../docs/cosmos-quantization.md)。

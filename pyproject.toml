@@ -11,6 +11,7 @@ dependencies = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["*.third_party", "*.third_party.*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -26,7 +27,8 @@ pythonpath = ["src"]
 "src/robotics_bench/kinetix/native/**/*.py" = ["F401", "F841", "E741"]
 
 [tool.setuptools.package-data]
-robotics_kernels = ["csrc/*.cu", "blackwell/csrc/*.cu", "blackwell/csrc/*.cuh", "blackwell/LICENSE", "blackwell/PROVENANCE.json"]
+"robotics_kernels.ampere_ada" = ["csrc/*.cu", "third_party/cutlass/**/*"]
+"robotics_kernels.blackwell" = ["csrc/*.cu", "csrc/*.cuh", "LICENSE", "PROVENANCE.json"]
 "robotics_bench.models.pi05" = ["PROVENANCE.json"]
 "robotics_bench.models.cosmos" = ["PROVENANCE.json"]
 "robotics_bench.kinetix" = ["PROVENANCE.json", "*_LICENSE", "levels/*.json"]

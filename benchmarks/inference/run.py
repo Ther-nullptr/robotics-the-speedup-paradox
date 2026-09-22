@@ -20,17 +20,36 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from robotics_bench.optimizations.config import OptimizationConfig, SWITCHES  # noqa:E402
-from robotics_bench.profiling.history import build_history, PRECISION_SWITCHES  # noqa:E402
+from robotics_bench.optimizations.config import (  # noqa: E402
+    OptimizationConfig,
+    SWITCHES,
+    TACTIC_IDS,
+    measurement_configurations,
+)
+from robotics_bench.profiling.history import build_history  # noqa:E402
 
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    p.add_argument("--case", choices=("pi05_libero", "cosmos_libero"), required=True)
+    p.add_argument(
+        "--case",
+        choices=("pi05_libero", "cosmos_libero", "cosmos_robocasa"),
+        required=True,
+    )
     p.add_argument("--input", type=Path, required=True)
     p.add_argument("--task", required=True)
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--gpu", required=True)
+    p.add_argument(
+        "--cudnn-benchmark",
+        action="store_true",
+        help="Enable cuDNN search before model loading for this whole process/cohort",
+    )
+    p.add_argument(
+        "--ablate-shared",
+        action="store_true",
+        help="Allow shared-switch ablations and measure a BF16 reference for each shared configuration",
+    )
     p.add_argument("--enable", action="append", choices=SWITCHES, default=[])
     p.add_argument(
         "--precision", choices=("bf16", "int8", "int4", "fp8", "fp4"), default="bf16"
@@ -40,7 +59,25 @@ def parser():
         action="append",
         choices=("text", "expert", "vision", "projector", "dit"),
     )
-    p.add_argument("--integer-tactic", type=int, choices=(0, 1), default=0)
+    p.add_argument("--integer-tactic", type=int, choices=TACTIC_IDS, default=0)
+    p.add_argument("--quant-tier", type=int, choices=range(11))
+    p.add_argument(
+        "--progressive-sweep",
+        action="store_true",
+        help="Cosmos appendix-inspired W8A8-to-W4A4 tier sweep",
+    )
+    p.add_argument(
+        "--progressive-tiers",
+        type=int,
+        choices=range(11),
+        nargs="+",
+        help="Subset of tiers; requires --progressive-sweep",
+    )
+    p.add_argument(
+        "--variants",
+        type=Path,
+        help="Measure explicit variant configurations in one loaded-model cohort",
+    )
     p.add_argument("--steps", type=int)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--validation-seed", action="append", type=int)
@@ -78,6 +115,28 @@ def resource(args, name, variable):
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def cosmos_engine_options(args):
+    suite = args.case.removeprefix("cosmos_")
+    if suite not in ("libero", "robocasa"):
+        raise ValueError("Expected a Cosmos inference case")
+    prefix = "ROBOTICS_COSMOS" + ("_ROBOCASA" if suite == "robocasa" else "")
+    return {
+        "source": resource(args, "cosmos_source", "ROBOTICS_COSMOS_SOURCE"),
+        **{
+            key: resource(args, key, prefix + "_" + key.upper())
+            for key in (
+                "checkpoint",
+                "dataset_stats",
+                "text_embeddings",
+                "vae_checkpoint",
+            )
+        },
+        "suite": suite,
+        "action_horizon": 32 if suite == "robocasa" else 16,
+        "num_inference_steps": args.steps or 5,
+    }
 
 
 def load_runner(args, output):
@@ -136,16 +195,8 @@ def load_runner(args, output):
     from robotics_bench.models.cosmos.runtime import bind_owned_runtime
     from robotics_bench.optimizations.cosmos import optimize_cosmos
 
-    source = resource(args, "cosmos_source", "ROBOTICS_COSMOS_SOURCE")
-    checkpoint = resource(args, "checkpoint", "ROBOTICS_COSMOS_CHECKPOINT")
-    engine = CosmosEngine(
-        source,
-        checkpoint,
-        resource(args, "dataset_stats", "ROBOTICS_COSMOS_DATASET_STATS"),
-        resource(args, "text_embeddings", "ROBOTICS_COSMOS_TEXT_EMBEDDINGS"),
-        resource(args, "vae_checkpoint", "ROBOTICS_COSMOS_VAE_CHECKPOINT"),
-        num_inference_steps=args.steps or 5,
-    )
+    options = cosmos_engine_options(args)
+    engine = CosmosEngine(**options)
     engine.load([args.task], output / "checkpoint-load.json")
     bindings = bind_owned_runtime(engine._model)
     from robotics_bench.models.cosmos import cosmos_utils
@@ -157,9 +208,11 @@ def load_runner(args, output):
         lambda c: optimize_cosmos(engine._model, c),
         engine.close,
         {
-            "checkpoint": str(checkpoint),
+            "checkpoint": str(options["checkpoint"]),
             "steps": args.steps or 5,
-            "horizon": 16,
+            "horizon": engine.action_horizon,
+            "suite": engine.suite,
+            "image_keys": list(engine.image_keys),
             "runtime": "owned",
             "owned_bindings": bindings,
         },
@@ -184,6 +237,21 @@ def main(argv=None):
             args.quant_scope or (("text",) if args.case == "pi05_libero" else ("dit",))
         ),
         args.integer_tactic,
+        args.quant_tier,
+    )
+    variants = json.loads(args.variants.read_text()) if args.variants else None
+    if args.progressive_tiers is not None and not args.progressive_sweep:
+        raise ValueError("--progressive-tiers requires --progressive-sweep")
+    if args.progressive_sweep:
+        if args.case != "cosmos_libero" or args.variants:
+            raise ValueError(
+                "Progressive sweep is a Cosmos LIBERO protocol and cannot be combined with --variants"
+            )
+        from robotics_bench.optimizations.progressive import cosmos_tier_variants
+
+        variants = cosmos_tier_variants(config, args.progressive_tiers)
+    configurations = measurement_configurations(
+        config, variants, allow_shared_variants=args.ablate_shared
     )
     output = args.output_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -197,6 +265,7 @@ def main(argv=None):
     import torch
     import numpy as np
 
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark
     inputs = []
     for path in [args.input, *args.validation_input]:
         path = path.expanduser().resolve()
@@ -213,20 +282,36 @@ def main(argv=None):
     metadata = {
         "case": args.case,
         "config": config.to_dict(),
+        "configurations": [{"id": name, **c.to_dict()} for name, c in configurations],
+        "variants_sha256": digest(args.variants) if args.variants else None,
         "task": args.task,
         "input_sha256": [
             digest(p.expanduser().resolve())
             for p in [args.input, *args.validation_input]
         ],
         "source_sha256": source_hashes,
+        "driver_sha256": digest(Path(__file__)),
         "git_head": git_head,
         "git_status": subprocess.check_output(
             ["git", "-C", str(ROOT), "status", "--porcelain"], text=True
         ),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
+        "cudnn": {
+            key: getattr(torch.backends.cudnn, key, None)
+            for key in (
+                "enabled",
+                "benchmark",
+                "benchmark_limit",
+                "deterministic",
+                "allow_tf32",
+            )
+        },
         "gpu": torch.cuda.get_device_name(0),
         "gpu_selector": args.gpu,
+        "gpu_uuid": str(
+            getattr(torch.cuda.get_device_properties(0), "uuid", "unavailable")
+        ),
         "cpu_threads": torch.get_num_threads(),
         "warmup": args.warmup,
         "repeats": args.repeats,
@@ -239,24 +324,11 @@ def main(argv=None):
     call = apply = close = None
     records = []
     profiles = []
+    precision_references = {}
     try:
         start = time.perf_counter()
         call, apply, close, model_info = load_runner(args, output)
         metadata.update(model=model_info, load_seconds=time.perf_counter() - start)
-        configurations = [("original", OptimizationConfig())]
-        if config.precision != "bf16":
-            configurations.append(
-                (
-                    "optimized-bf16",
-                    OptimizationConfig(
-                        tuple(s for s in config.enabled if s not in PRECISION_SWITCHES),
-                        "bf16",
-                        config.scopes,
-                        config.tactic,
-                    ),
-                )
-            )
-        configurations.append(("candidate", config))
         reference = []
         for name, current in configurations:
             start = time.perf_counter()
@@ -280,10 +352,12 @@ def main(argv=None):
                     squared = 0.0
                     count = 0
                     checks = []
+                    validation_actions = []
                     for index, observation in enumerate(inputs):
                         for seed in metadata["validation_seeds"]:
                             torch.manual_seed(seed)
                             actual = call(observation, args.task, seed)
+                            validation_actions.append(actual.copy())
                             if name == "original":
                                 reference.append(actual.copy())
                             expected = reference[len(checks)]
@@ -311,10 +385,11 @@ def main(argv=None):
                             )
                     record = {
                         "id": name,
-                        "precision": current.precision,
+                        "precision": current.precision_label,
                         "switches": list(current.enabled),
                         "scopes": list(current.scopes),
                         "tactic": current.tactic,
+                        "quant_tier": current.quant_tier,
                         "samples_ms": samples,
                         "median_ms": float(np.median(samples)),
                         "exact": exact,
@@ -325,6 +400,33 @@ def main(argv=None):
                         "coverage": deepcopy(coverage),
                         "recorded_at": datetime.now(timezone.utc).isoformat(),
                     }
+                    signature = (
+                        current.precision,
+                        current.scopes if current.precision != "bf16" else (),
+                        current.quant_tier,
+                    )
+                    numerical_id, numerical_actions = precision_references.setdefault(
+                        signature, (name, validation_actions)
+                    )
+                    record["same_precision_reference"] = {
+                        "id": numerical_id,
+                        "exact": all(
+                            np.array_equal(a, b)
+                            for a, b in zip(validation_actions, numerical_actions)
+                        ),
+                        "max_abs": max(
+                            float(
+                                np.max(
+                                    np.abs(a.astype(np.float64) - b.astype(np.float64))
+                                )
+                            )
+                            for a, b in zip(validation_actions, numerical_actions)
+                        ),
+                    }
+                    np.savez_compressed(
+                        output / (name + "-validation-actions.npz"),
+                        **{f"check_{i}": a for i, a in enumerate(validation_actions)},
+                    )
                     record["speedup_vs_baseline"] = (
                         records[0]["median_ms"] / record["median_ms"]
                         if records
@@ -392,6 +494,7 @@ def main(argv=None):
                 "selector": args.gpu,
                 "torch": torch.__version__,
                 "cpu_threads": metadata["cpu_threads"],
+                "cudnn": metadata["cudnn"],
             },
             "metric": {
                 "name": "Complete policy service",
@@ -399,10 +502,13 @@ def main(argv=None):
                 "statistic": "median",
             },
         }
-        current = (
-            "candidate"
-            if config.precision == "bf16" and records[-1]["exact"]
-            else ("optimized-bf16" if len(records) == 3 else "original")
+        current = next(
+            (
+                r["id"]
+                for r in reversed(records)
+                if r["precision"] == "bf16" and r["exact"]
+            ),
+            "original",
         )
         history = build_history(
             records,
@@ -444,20 +550,25 @@ def main(argv=None):
                 check=True,
             )
         if args.profile_skill and profiles:
+            from robotics_bench.profiling.breakdown import pages
+
             renderer = (
                 args.profile_skill.expanduser().resolve()
                 / "scripts/render_profile_breakdown.py"
             )
-            subprocess.run(
-                [
-                    args.render_python,
-                    str(renderer),
-                    str(output / "profile-breakdown.json"),
-                    "--output-dir",
-                    str(output / "figures"),
-                ],
-                check=True,
-            )
+            for index, page in enumerate(pages(breakdown), 1):
+                page_path = output / f"profile-breakdown-p{index:02}.json"
+                page_path.write_text(json.dumps(page, indent=2) + "\n")
+                subprocess.run(
+                    [
+                        args.render_python,
+                        str(renderer),
+                        str(page_path),
+                        "--output-dir",
+                        str(output / "figures"),
+                    ],
+                    check=True,
+                )
         metadata["status"] = "completed"
     except BaseException as error:
         metadata["status"] = "failed"

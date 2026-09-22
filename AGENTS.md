@@ -58,6 +58,14 @@ python -m compileall -q tools benchmarks src
 
 INT实现参照本仓独立FP副本的loader/Linear/pack/prepare/forward_packed分层；不导入父目录VLM代码。格式、scale、zero-point、pack版本和实际硬件后端显式区分，不能把INT4称为FP4。
 
+Cosmos固定INT8/INT4、渐进覆盖与共享VAE优化已完成本轮实现和性能验证，稳定说明见
+[Cosmos量化指南](docs/cosmos-quantization.md)；全量量化任务质量仍待验证。后续新调优
+按新的任务范围执行，不因已有开关默认继续压测。π0.5先处理text/LLM，diffusion/action
+expert暂缓。INT源码、
+CUDA实现和固定CUTLASS头文件均由robotics包内维护，不从外部VLM、QuaRot或Mini QServe
+目录加载。INT4允许较大动作偏差继续性能实验，仍需记录偏差、实际覆盖及任务结果；
+零成功时不生成成功条件任务加速比。每轮优先固定INT4/INT8完整调用，再开展渐进覆盖。
+
 ## LingBot＋RoboTwin
 
 LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。模型和仿真使用独立本地环境；支持sync和paper_async；禁止把WebSocket async命名当成论文抽象。paper_async的n′范围0..16，每个名义关键帧k使用max(0,k−n′)的完整快照，负索引重复初始帧；原始预测动作缓存条件保持原位。不得只延迟推理请求而让KV/VAE读取较新的观测。首次执行16条指令，后续完整块32条，每4条采样实际观测更新KV/VAE；终止/预算截断不更新未执行动作。`primitive_steps` 是RoboTwin接受的take_action指令数，不是250Hz物理tick。此入口默认复用显式提供的本地checkpoint、模拟器资产和环境；执行时不自动下载，输出写入调用者目录，不修改共享资源。
