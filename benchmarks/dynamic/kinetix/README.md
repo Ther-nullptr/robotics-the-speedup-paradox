@@ -130,7 +130,9 @@ python benchmarks/dynamic/kinetix/summarize.py --input runs/dynamic/kinetix/matr
 
 RTX 6000 Ada上完成 `car_launch` 与 `mjc_walker`、N∈{1,5}、L∈{0,21.938 ms}、seed0的8回合接入检查。car_launch四个单元均成功，控制步数分别41、43、44、46；mjc_walker分别为成功167步、失败、成功149步、成功207步。失败按256条预算进入总体统计。每单元仅一个回合，不能据此报告总体质量或最优flow步数。
 
-两关分别完成zero-delay、full-old和constant-command的逐值原生对齐；四个配置的初始观测hash各自一致。八段视频均可解码，为126×126，帧数严格等于实际控制步数加1。wheel中的关卡、纹理、许可证和独立CPU统计已检查。完整12关全量评估、目标硬件profile匹配和真正异步并发尚未验收。
+两关分别完成zero-delay、full-old和constant-command的逐值原生对齐；四个配置的初始观测hash各自一致。八段视频均可解码，为126×126，帧数严格等于实际控制步数加1。wheel中的关卡、纹理、许可证和独立CPU统计已检查。
+
+另外完成原RTC BC权重的零延迟质量矩阵：12关、N=1..5、每格128个配对seed，共7680回合；平均成功率依次为78.45%、85.74%、89.32%、89.97%、88.87%。分析/绘图入口和区间见[迭代步数实验说明](../../../docs/kinetix-flow-quality.md)。独立`benchmark_eval.py`在Car Launch N=5上验证了动作预处理JIT的1.119×稳态评估加速，并逐步核对状态/动作/终止；该选项尚未进入默认runner。全12关的非零时延矩阵、优化覆盖、目标硬件profile匹配和真正异步并发仍待验证。
 
 ## English summary
 
