@@ -9,6 +9,17 @@ from contextlib import contextmanager
 from .patching import Patches
 
 
+# Bind model geometry to the engine contract; camera layouts are not interchangeable.
+_ACTION_BOUNDARIES = {
+    (9, 4): ("libero", 16, ("primary_image", "wrist_image")),
+    (11, 5): (
+        "robocasa",
+        32,
+        ("primary_image", "secondary_image", "wrist_image"),
+    ),
+}
+
+
 def prefix_plan(input_frames, condition_frames, factor, window):
     values = (input_frames, condition_frames, factor, window)
     if any(type(v) is not int or v < 1 for v in values):
@@ -89,6 +100,9 @@ def optimize_conditioning_prefix(model):
     wrapper = tokenizer.model
     core = wrapper.model
     config = model.config
+    boundary = _ACTION_BOUNDARIES.get(
+        (config.state_t, config.min_num_conditional_frames)
+    )
     if (
         type(core).__module__ != "cosmos_policy.tokenizers.wan2pt1"
         or type(core).__name__ != "WanVAE_"
@@ -97,15 +111,15 @@ def optimize_conditioning_prefix(model):
         or wrapper.is_parallel
         or tokenizer.keep_encoder_cache
         or getattr(model.net, "is_context_parallel_enabled", False)
-        or config.state_t != 11
-        or config.min_num_conditional_frames != 5
-        or config.max_num_conditional_frames != 5
+        or boundary is None
+        or config.min_num_conditional_frames != config.max_num_conditional_frames
         or config.use_flowunipc_scheduler
         or not config.denoise_replace_gt_frames
     ):
         raise ValueError(
-            "Condition-prefix reuse requires the verified action-only RoboCasa Wan configuration"
+            "Condition-prefix reuse requires a supported action-only LIBERO or RoboCasa Wan configuration"
         )
+    admitted_suite, expected_horizon, expected_images = boundary
     projection = core.conv1
     if (
         tuple(projection.kernel_size) != (1, 1, 1)
@@ -126,6 +140,7 @@ def optimize_conditioning_prefix(model):
         core.temporal_window,
     )
     report = {
+        "suite": admitted_suite,
         "plan": plan,
         "requests": 0,
         "encode_calls": 0,
@@ -146,13 +161,14 @@ def optimize_conditioning_prefix(model):
         if request is not None:
             raise RuntimeError("Condition-prefix reuse requires serialized requests")
         if (
-            suite != "robocasa"
-            or action_horizon != 32
+            suite != admitted_suite
+            or action_horizon != expected_horizon
             or not use_proprio
-            or tuple(image_keys) != ("primary_image", "secondary_image", "wrist_image")
+            or tuple(image_keys) != expected_images
         ):
             raise ValueError(
-                "Condition-prefix reuse supports only the verified RoboCasa action boundary"
+                f"Condition-prefix reuse requires the {admitted_suite} action boundary "
+                f"with H={expected_horizon} and cameras={expected_images}"
             )
         request = {"encodes": 0, "mask_checked": False}
         try:

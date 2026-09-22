@@ -49,7 +49,9 @@ def test_unexpected_chunk_crossing_the_prefix_fails():
         gate(torch.zeros(1, 3, 20, 8, 8))
 
 
-def toy_policy():
+def toy_policy(suite="robocasa"):
+    latents, conditions = (9, 4) if suite == "libero" else (11, 5)
+
     class Encoder(torch.nn.Module):
         def forward(self, x):
             return (x[:, :2, ::4] + 2).contiguous()
@@ -65,22 +67,26 @@ def toy_policy():
     class Tokenizer:
         keep_encoder_cache = False
         temporal_compression_factor = 4
-        model = SimpleNamespace(model=core, is_parallel=False, video_std=torch.ones(11))
+        model = SimpleNamespace(
+            model=core, is_parallel=False, video_std=torch.ones(latents)
+        )
 
         def get_pixel_num_frames(self, n):
             return 1 + 4 * (n - 1)
 
         def encode(self, x):
-            pieces = [x[:, :, :1], x[:, :, 1:17], x[:, :, 17:33], x[:, :, 33:]]
+            pieces = [x[:, :, :1]] + [
+                x[:, :, start : start + 16] for start in range(1, x.shape[2], 16)
+            ]
             return core.conv1(torch.cat([core.encoder(piece) for piece in pieces], 2))
 
     return SimpleNamespace(
         tokenizer=Tokenizer(),
         net=SimpleNamespace(training=False, is_context_parallel_enabled=False),
         config=SimpleNamespace(
-            state_t=11,
-            min_num_conditional_frames=5,
-            max_num_conditional_frames=5,
+            state_t=latents,
+            min_num_conditional_frames=conditions,
+            max_num_conditional_frames=conditions,
             use_flowunipc_scheduler=False,
             denoise_replace_gt_frames=True,
         ),
@@ -89,23 +95,27 @@ def toy_policy():
 
 
 @pytest.mark.parametrize("inplace", [False, True])
-def test_each_denoise_mask_is_checked_and_failed_request_is_cleared(inplace):
+@pytest.mark.parametrize("suite", ["libero", "robocasa"])
+def test_each_denoise_mask_is_checked_and_failed_request_is_cleared(inplace, suite):
     from robotics_bench.optimizations.cosmos_prefix import optimize_conditioning_prefix
 
-    model = toy_policy()
-    x = torch.randn(1, 3, 41, 8, 8)
+    model = toy_policy(suite)
+    frames = model.tokenizer.get_pixel_num_frames(model.config.state_t)
+    x = torch.randn(1, 3, frames, 8, 8)
     native = model.tokenizer.encode(x)
     with torch.inference_mode(), optimize_conditioning_prefix(model) as report:
         with pytest.raises(ValueError, match="omitted"):
             with model._robotics_action_only_context(
-                suite="robocasa",
-                action_horizon=32,
-                image_keys=("primary_image", "secondary_image", "wrist_image"),
+                suite=suite,
+                action_horizon=16 if suite == "libero" else 32,
+                image_keys=("primary_image", "wrist_image")
+                if suite == "libero"
+                else ("primary_image", "secondary_image", "wrist_image"),
                 use_proprio=True,
             ):
                 model.tokenizer.encode(x)
-                mask = torch.zeros(1, 1, 11, 8, 8)
-                mask[:, :, :5] = 1
+                mask = torch.zeros(1, 1, model.config.state_t, 8, 8)
+                mask[:, :, : model.config.min_num_conditional_frames] = 1
                 condition = SimpleNamespace(condition_video_input_mask_B_C_T_H_W=mask)
                 model.denoise(x, torch.ones(1), condition)
                 if not inplace:
@@ -118,3 +128,48 @@ def test_each_denoise_mask_is_checked_and_failed_request_is_cleared(inplace):
         assert report["requests"] == 0
         assert torch.equal(model.tokenizer.encode(x), native)
     assert not hasattr(model, "_robotics_action_only_context")
+
+
+@pytest.mark.parametrize("suite", ["libero", "robocasa"])
+def test_shared_prefix_matches_case_boundary_and_preserves_condition(suite):
+    from robotics_bench.optimizations.cosmos_prefix import optimize_conditioning_prefix
+
+    model = toy_policy(suite)
+    frames = model.tokenizer.get_pixel_num_frames(model.config.state_t)
+    x = torch.randn(1, 3, frames, 8, 8)
+    native = model.tokenizer.encode(x)
+    boundary = dict(
+        suite=suite,
+        action_horizon=16 if suite == "libero" else 32,
+        image_keys=("primary_image", "wrist_image")
+        if suite == "libero"
+        else ("primary_image", "secondary_image", "wrist_image"),
+        use_proprio=True,
+    )
+    with torch.inference_mode(), optimize_conditioning_prefix(model) as report:
+        for wrong in (
+            {"suite": "robocasa" if suite == "libero" else "libero"},
+            {"action_horizon": boundary["action_horizon"] + 1},
+            {"image_keys": tuple(reversed(boundary["image_keys"]))},
+        ):
+            with pytest.raises(ValueError, match="action boundary"):
+                with model._robotics_action_only_context(**(boundary | wrong)):
+                    raise AssertionError("An incompatible case was admitted")
+        with model._robotics_action_only_context(**boundary):
+            actual = model.tokenizer.encode(x)
+            condition_frames = model.config.min_num_conditional_frames
+            assert actual.shape == native.shape
+            assert torch.equal(
+                actual[:, :, :condition_frames], native[:, :, :condition_frames]
+            )
+            mask = torch.zeros(1, 1, model.config.state_t, 8, 8)
+            mask[:, :, :condition_frames] = 1
+            model.denoise(
+                x,
+                torch.ones(1),
+                SimpleNamespace(condition_video_input_mask_B_C_T_H_W=mask),
+            )
+        assert report["suite"] == suite
+        assert report["requests"] == 1
+        assert report["encoded_pixel_frames"] == 17
+        assert report["skipped_pixel_frames"] == frames - 17
