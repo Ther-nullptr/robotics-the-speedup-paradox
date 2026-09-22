@@ -28,6 +28,8 @@ source .local/kinetix.env
 
 ## 启动与矩阵评估
 
+仅研究模型迭代步数对准确率的影响，可使用仓内`flow_quality.py`：默认12关、N=1..5、每格128个配对seed、零注入延迟，保持原生仿真参数，按任务分配空闲GPU并复用编译。协议、命令和输出路径见[迭代步数实验说明](../../../docs/kinetix-flow-quality.md)。
+
 先预检，预检只读取仓内代码/关卡和checkpoint文件身份，不导入JAX、不创建实验目录：
 
 ```bash
