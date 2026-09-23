@@ -117,7 +117,7 @@ nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name --format=csv
 
 配对比较先按repeat交替顺序计时，再在计时外逐seed记录完整状态hash、模型输出hash和语义事件。只有轨迹逐值一致且所有计时回合也匹配已验证结果，才生成`validated_speedup = reference rollout wall / candidate rollout wall`；否则为null。状态覆盖每个原生控制边界，事件比较只排除host policy耗时。计时范围包含reset、完整回合和每步检查，不含冷启动/JIT预热、文件日志、录像、trace采集和cProfile。
 
-RTX 6000 Ada、JAX 0.4.35/jaxlib 0.4.34上的最终配对测试：
+RTX 6000 Ada、JAX 0.4.35/jaxlib 0.4.34上的首次单任务正式配对测试：
 
 | 指标 | Reference | Action preprocessing JIT |
 | --- | ---: | ---: |
@@ -129,7 +129,7 @@ RTX 6000 Ada、JAX 0.4.35/jaxlib 0.4.34上的最终配对测试：
 
 本轮加速比1.119×，三轮分别为1.097×、1.118×、1.141×；耗时减少约10.6%。12对计时结果一致，另外4对完整轨迹中，每种实现的392个控制状态、98次模型输出及全部语义事件一致。前一轮同设置测得1.132×，但缺少完整身份记录；最终数字采用补齐身份后的重新测量。
 
-环境host span约占原始rollout的96%，其中包含GPU等待；cProfile中的`device_get`等待不能直接称为物理kernel计算时间。因此，仅降低模型推理耗时对本机整体评估收益有限。动作预处理JIT的收益来自环境调用路径；当前证据限于Car Launch、N=5、4个seed，不代表12关普遍收益、完整CLI冷启动收益或模型推理加速。
+环境host span约占原始rollout的96%，其中包含GPU等待；cProfile中的`device_get`等待不能直接称为物理kernel计算时间。因此，仅降低模型推理耗时对本机整体评估收益有限。动作预处理JIT的收益来自环境调用路径；这轮单任务证据限于Car Launch、N=5、4个seed，不代表12关普遍收益、完整CLI冷启动收益或模型推理加速。后续多任务验证见下一节。
 
 本地旧jaxlib也不接受循环/条件分支的command-buffer扩展选项，相关探测在编译参数阶段失败，没有性能结果；不把现代运行栈的选项直接套入旧环境。进一步研究可考虑保持每步RNG、done/finite检查的设备端回合驱动或跨环境批量化，但必须重新验证逐步状态和首次终止，并单独评估编译时间与显存。目前未启用这些改动，未修改物理时间片。GPU实验不加入公共CPU CI。
 
