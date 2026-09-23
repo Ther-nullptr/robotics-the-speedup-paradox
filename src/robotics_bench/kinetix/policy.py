@@ -70,12 +70,18 @@ class KinetixFlowPolicy:
     def infer_device(self, observation, flow_steps):
         """Return the existing sampler output without an explicit host transfer."""
         import jax
+
+        key = jax.random.fold_in(self._rng, self._requests)
+        self._requests += 1
+        return self.infer_device_with_key(observation, flow_steps, key)
+
+    def infer_device_with_key(self, observation, flow_steps, key):
+        """Use an explicit per-environment key with the same batch-one sampler."""
+        import jax
         import jax.numpy as jnp
 
         if flow_steps not in self._compiled:
             self._compiled[flow_steps] = jax.jit(
                 lambda key, obs: self.policy.action(key, obs[None], flow_steps)[0]
             )
-        key = jax.random.fold_in(self._rng, self._requests)
-        self._requests += 1
         return self._compiled[flow_steps](key, jnp.asarray(observation))

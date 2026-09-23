@@ -1,6 +1,6 @@
 # KINETIX：保持原生控制语义的评估加速
 
-本页区分两类工作：定位原生GPU执行的数值重复性，以及减少单环境评估的host调度/同步。模型计算、物理源码与默认`run.py`的执行方式保持原样；policy新增GPU结果接口，原同步NumPy接口保留。新入口都是显式实验工具。环境与checkpoint配置见[KINETIX入口](../benchmarks/dynamic/kinetix/README.md)，质量矩阵和动作预处理JIT基准见[flow步数实验](kinetix-flow-quality.md)。
+本页记录原生GPU执行的数值重复性、单环境调度/同步优化，以及同任务多seed吞吐验证。模型计算、物理源码与默认`run.py`的执行方式保持原样；policy新增GPU结果和显式随机key接口，原同步NumPy接口保留。新入口都是显式实验工具。环境与checkpoint配置见[KINETIX入口](../benchmarks/dynamic/kinetix/README.md)，质量矩阵和动作预处理JIT基准见[flow步数实验](kinetix-flow-quality.md)。
 
 ## Device chunks
 
@@ -81,6 +81,58 @@ RTX 6000 Ada、JAX0.4.35/jaxlib0.4.34、原RTC BC24 FP32、N=5、seed0..3、每s
 这些是相对host往返版device chunks的**增量**，不能乘以上节不同运行的加速比作为原生总加速。新runner也减少了CPU数组复制、旧动作尾部维护和调度检查，因此结果归属于整条驻留动作实现，未单独隔离PCIe传输的贡献。计时覆盖参数检查、协议构造、reset及完整回合；排除首次编译、trace和文件输出。当前仍只验证这3个任务、N=5、4个seed的零延迟/原生预算/execute-four场景，默认`run.py`不自动启用此路径。
 
 输出为`benchmark.json`和工具源码快照，包含各条路径的原始trace、动作有限值检查、配对计时、依赖/代码/设备身份以及可选历史引用的hash。脚本和报告字段使用英文。
+
+## 多环境吞吐验证
+
+`benchmark_batched_evaluation.py`在同一任务、同一批预先指定的seed上比较串行驻留动作评估和并行候选。模型始终使用原来的batch=1采样器，不改变flow步数、预测/执行horizon、物理步长、求解器或成功/终止规则。每个seed独立维护环境、噪声和policy随机流；已完成回合不再请求模型或增加控制计数，不以reset后的新回合填充批次。
+
+三种候选分别验收：
+
+- `--method vmap`：只批量化环境控制窗口；每个活跃环境仍单独调用原模型。完成槽保持状态，trace阶段逐个检查后续窗口的冻结状态；掩码不代表GPU完全没有执行被丢弃的算术。
+- `--method threads`：一个进程内使用多个worker，保留单环境模型和物理计算图。共享只读权重和已预热编译函数，环境状态和随机计数由各worker独立维护；线程池启动/关闭开销计入总时间。
+- `--method threads-locked`：同样使用多个worker，但共享物理窗口从提交到设备完成均受锁保护，模型请求和host处理仍可并发。这是针对下述终止边界异常的保守候选；锁和完成等待的开销也计入总时间。
+
+```bash
+"$ROBOTICS_KINETIX_PYTHON" -B -u benchmarks/dynamic/kinetix/benchmark_batched_evaluation.py \
+  --policy-dir "$ROBOTICS_KINETIX_POLICY_DIR" --gpu 3 \
+  --level car_launch --flow-steps 5 --episodes 128 --start-seed 0 \
+  --method vmap --batch-sizes 2,8,16,32 --repeats 3 \
+  --output-dir runs/dynamic/kinetix/batched-vmap-car-001
+
+# Use a new output directory for the unchanged scalar executables.
+"$ROBOTICS_KINETIX_PYTHON" -B -u benchmarks/dynamic/kinetix/benchmark_batched_evaluation.py \
+  --policy-dir "$ROBOTICS_KINETIX_POLICY_DIR" --gpu 3 \
+  --level car_launch --flow-steps 5 --episodes 128 --start-seed 0 \
+  --method threads-locked --batch-sizes 8 --repeats 3 \
+  --output-dir runs/dynamic/kinetix/batched-threads-locked-car-001
+```
+
+`--batch-sizes`在两种threads模式表示worker数量；`--method threads`可重放未加窗口锁的候选。seed数量必须能被每种宽度整除；不补齐、重复或丢弃seed。`--gate-only`只采集轨迹并检查，不计时。可选`--reference-run`读取之前`benchmark_resident_actions.py`的`benchmark.json`，核对可用的共同seed；报告明确列出已核对和历史记录未覆盖的seed。
+
+验收先比较串行路径自身的两次完整轨迹，再比较每种候选与串行路径、候选自身的重复轨迹。检查完整状态、模型输出、语义事件、终止原因、控制步数及回合结果。某宽度任一seed不一致，或串行路径自身不重复，该宽度的`validated_speedups`为`null`，不进入性能统计；不删除问题seed后重新报告整个工作量通过。
+
+通过后按轮交替运行完整的串行/并行工作量，计时回合的结果也必须匹配已验收结果。加速比为**串行完成整组seed的wall time总和／并行完成相同seed的wall time总和**；吞吐量为回合数除以整组耗时，不相加并发回合各自的用时。这不是单次模型推理时延或仿真时间加速。计时包含reset、分组/打包及结果回收，排除模型加载、首次编译、trace及文件输出。
+
+输出`benchmark.json`和四个工具源码快照。首次串行回合预热时间、首次候选完整trace时间单独保存；后者包含编译和轨迹采集，不能解释为纯编译时间。显存记录是进程累计的JAX allocator峰值和采样时的整卡占用，包含缓存的编译产物，不是各宽度独立的显存峰值。
+
+本机JAX 0.4.35缺少`optimization_barrier`的原生批量规则，候选用局部`custom_vmap`规则对整个批量张量保留同一屏障，不修改安装的JAX。保留屏障不能保证扩大张量形状后的浮点执行逐位一致，因此每种宽度仍须独立通过上述检查。
+
+RTX 6000 Ada、JAX0.4.35/jaxlib0.4.34、原RTC BC24 FP32、Car Launch N=5、seed0..127的完整验证中，串行驻留路径128个seed均逐位可重复，与历史记录可用的seed0..3也一致。批量环境候选结果如下：
+
+| 环境批量宽度 | 与基线完整轨迹一致 | 自身重复轨迹一致 | 与基线回合结果一致 | 有效加速比 |
+| --- | ---: | ---: | ---: | --- |
+| 2 | 125/128 | 125/128 | 128/128 | 不计时 |
+| 8 | 111/128 | 108/128 | 125/128 | 不计时 |
+| 16 | 0/128 | 112/128 | 111/128 | 不计时 |
+| 32 | 0/128 | 112/128 | 111/128 | 不计时 |
+
+B2的seed34/38/48分别从控制48/43/50开始不同；B8的16个seed从控制1开始不同，另一个seed18从控制63开始不同；B16/32所有seed均从控制1开始不同。B8有3个seed的控制步数发生变化，B16/32有15个seed的控制步数变化、2个seed的成功/失败结果互换。各配置成功总数碰巧都是122/128，因此只比较总体成功率会掩盖任务结果变化。不能把它们认证为无损加速，也不能用包含trace的运行时间代替性能测量。
+
+在此前seed0..7的小规模并发检查中，threads的2/8个worker均通过逐位验收，三轮配对工作量分别为15.618/14.881秒和16.212/15.431秒，对应1.050×/1.051×。这些数值仅覆盖8个seed；B2在这8个seed上也曾通过，扩大到128个后失败，说明小样本通过不能直接推广。
+
+threads的8-worker完整128-seed检查在候选采集时触发终止边界异常，报告为`failed`，没有候选通过记录或有效加速比。追加两轮诊断分别在seed54/30复现：前者窗口从控制44开始，返回计数2但第1条已标记终止；后者从控制4开始，计数3但第2条已标记终止。检查会中止评估，异常不记为策略失败。错误信息保留seed、窗口起点、计数及done/solved/finite序列；目前没有证据把它确定归因于某个物理算子、共享状态或JAX运行时问题。
+
+只给共享物理窗口加锁并等待设备完成的诊断中，两轮各128个seed均与保存的串行参考完整一致。该对照缩小了问题范围，没有证明底层根因；诊断没有测吞吐，不能据此声称加锁后提速。
 
 ## 原生重复性诊断
 

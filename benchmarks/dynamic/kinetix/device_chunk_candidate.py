@@ -3,24 +3,23 @@
 from contextlib import contextmanager
 
 
-def compile_device_window(env, *, resident_actions=False):
+def compile_device_window(env, *, resident_actions=False, barrier=None):
     """Compile the same native controls, optionally guarding the full GPU chunk."""
     import jax
     import jax.numpy as jnp
 
+    barrier = jax.lax.optimization_barrier if barrier is None else barrier
     static_horizon = 4
 
-    def advance(state, noise_rng, control_step, actions, params):
+    def advance(state, noise_rng, control_step, actions, params, enabled=True):
         def one(carry, action):
             current, step, finished = carry
 
             def active(_):
                 key = jax.random.fold_in(noise_rng, step)
-                normal = jax.lax.optimization_barrier(
-                    jax.random.normal(key, (env.action_dim,))
-                )
-                noise = jax.lax.optimization_barrier(normal * env.noise_std)
-                noisy = jax.lax.optimization_barrier(action + noise)
+                normal = barrier(jax.random.normal(key, (env.action_dim,)))
+                noise = barrier(normal * env.noise_std)
+                noisy = barrier(action + noise)
                 obs, new, reward, done, info = env.native.step_env(
                     key, current, noisy, params
                 )
@@ -57,7 +56,8 @@ def compile_device_window(env, *, resident_actions=False):
             (
                 state,
                 control_step,
-                ~valid_actions if resident_actions else jnp.bool_(False),
+                (~valid_actions if resident_actions else jnp.bool_(False))
+                | ~jnp.asarray(enabled),
             ),
             actions[:static_horizon] if resident_actions else actions,
         )

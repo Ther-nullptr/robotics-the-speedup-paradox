@@ -34,6 +34,8 @@ source .local/kinetix.env
 
 `benchmark_resident_actions.py`进一步使用`policy.infer_device()`保持动作在GPU，保留原同步NumPy接口。相同3关/N=5/4seed的五轮配对验证，相对host往返版device chunks获得约1.044×、1.032×、1.034×增量；不能与其他运行的比值相乘。完整动作仅在trace阶段回读，默认`run.py`继续沿用原路径；命令与验收边界见上述说明。
 
+`benchmark_batched_evaluation.py`验证同任务多seed评估吞吐，模型保持batch=1，分别测试环境`vmap`与原单环境计算图的线程并发。必须通过所有指定seed的完整轨迹与重复性检查才计时；失败配置保留记录，加速比为`null`。指标是完成同一组任务的总耗时，开关、命令和证据范围见[多环境吞吐验证](../../../docs/kinetix-evaluation-acceleration.md#多环境吞吐验证)。
+
 先预检，预检只读取仓内代码/关卡和checkpoint文件身份，不导入JAX、不创建实验目录：
 
 ```bash
@@ -55,7 +57,7 @@ bash benchmarks/dynamic/kinetix/run.sh \
 
 `--episodes` 是每个“关卡×flow步数×延迟”单元的回合数，上例共8回合。所有单元使用相同的seed列表；环境、动作噪声和policy使用独立随机流。`--levels all` 覆盖12个内置关卡。每个关卡绑定自己的checkpoint，不把模型与环境任意组合。
 
-`--max-steps` 可以设置更小的控制步预算，但不能超过原生任务预算。CPU运行可以用 `--cpu` 代替 `--gpu`。每次真实运行使用新输出目录。当前是单环境逐回合执行；JAX编译policy与物理内核，不宣称已实现跨环境并行或真实后台推理。
+`--max-steps` 可以设置更小的控制步预算，但不能超过原生任务预算。CPU运行可以用 `--cpu` 代替 `--gpu`。每次真实运行使用新输出目录。默认入口是单环境逐回合执行；JAX编译policy与物理内核。并行吞吐候选只在独立benchmark中提供，没有接入默认runner或实现真实后台推理。
 
 完整回合覆盖定义为：每个指定seed从本关卡初态开始，遇到原生成功/失败接触或预算耗尽时停止，不自动reset后继续计入同一回合。运行异常、非有限状态和非法模型输出使实验失败，不计为策略失败回合。
 

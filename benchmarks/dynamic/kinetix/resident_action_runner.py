@@ -154,7 +154,11 @@ def resident_episode(policy, env, advance, *, seed, flow_steps, capture=False):
             if done or success or steps == env.max_steps:
                 if offset + 1 != int(count):
                     raise RuntimeError(
-                        "Device window advanced beyond the first terminal boundary"
+                        "Device window advanced beyond the first terminal boundary: "
+                        f"seed={seed}, source_step={source_step}, "
+                        f"executed={int(count)}, terminal_offset={offset}, "
+                        f"done={dones.tolist()}, solved={solved.tolist()}, "
+                        f"finite={finite.tolist()}"
                     )
                 reason = (
                     "success"
