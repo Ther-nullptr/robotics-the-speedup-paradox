@@ -32,6 +32,8 @@ source .local/kinetix.env
 
 评估吞吐实验另有`benchmark_device_chunks.py`：在零延迟/原生预算/执行4条动作的范围内，先验证原版重复性和逐步等价，再测设备端控制窗口。Car Launch、H17 Unicycle、Chain Lander的N=5、各4seed验证获得约1.42×、1.21×、1.42×回合加速；尚未进入默认runner。数值重复性诊断、使用命令和范围见[评估加速说明](../../../docs/kinetix-evaluation-acceleration.md)。
 
+`benchmark_resident_actions.py`进一步使用`policy.infer_device()`保持动作在GPU，保留原同步NumPy接口。相同3关/N=5/4seed的五轮配对验证，相对host往返版device chunks获得约1.044×、1.032×、1.034×增量；不能与其他运行的比值相乘。完整动作仅在trace阶段回读，默认`run.py`继续沿用原路径；命令与验收边界见上述说明。
+
 先预检，预检只读取仓内代码/关卡和checkpoint文件身份，不导入JAX、不创建实验目录：
 
 ```bash
