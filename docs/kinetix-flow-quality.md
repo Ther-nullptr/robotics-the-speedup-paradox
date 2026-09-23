@@ -74,7 +74,7 @@ source .local/kinetix.env
 | `task_success_vs_flow_steps.png/.pdf` | 各关卡成功率曲线 |
 | `macro_success_vs_flow_steps.png/.pdf` | 等权任务平均成功率曲线 |
 
-分析只依赖NumPy，绘图额外需要Matplotlib；`--no-plots`可关闭绘图。`--allow-partial`仅查看已完成单元，不输出总体或配对结论。脚本拒绝重复/缺失回合、不同初态、非零延迟、改变的已检查物理参数、不完整运行身份以及混用代码/依赖版本。
+分析只依赖NumPy，绘图额外需要Matplotlib；`--no-plots`可关闭绘图。`--allow-partial`查看已完成回合的部分统计，不输出总体或配对结论。脚本拒绝重复/缺失回合、不同初态、非零延迟、改变的已检查物理参数、不完整运行身份以及混用代码/依赖版本。
 
 同一seed在各任务和N之间共享派生随机流，因此bootstrap每次联合抽取整个seed块，保留跨任务和跨N的相关性。默认5000次、固定bootstrap seed；任务本身不重抽样，区间只描述这组固定任务的seed不确定性。每关的配对比较使用精确McNemar检验，对全部任务×非参考N的比较做Holm校正。未检出差异不等于已证明等价，也不假设质量随N单调增加。
 
@@ -132,3 +132,51 @@ RTX 6000 Ada、JAX 0.4.35/jaxlib 0.4.34上的最终配对测试：
 环境host span约占原始rollout的96%，其中包含GPU等待；cProfile中的`device_get`等待不能直接称为物理kernel计算时间。因此，仅降低模型推理耗时对本机整体评估收益有限。动作预处理JIT的收益来自环境调用路径；当前证据限于Car Launch、N=5、4个seed，不代表12关普遍收益、完整CLI冷启动收益或模型推理加速。
 
 本地旧jaxlib也不接受循环/条件分支的command-buffer扩展选项，相关探测在编译参数阶段失败，没有性能结果；不把现代运行栈的选项直接套入旧环境。进一步研究可考虑保持每步RNG、done/finite检查的设备端回合驱动或跨环境批量化，但必须重新验证逐步状态和首次终止，并单独评估编译时间与显存。目前未启用这些改动，未修改物理时间片。GPU实验不加入公共CPU CI。
+
+## 多任务加速验证与重复性边界
+
+将相同对照扩展到全部12关，固定N=5、seed 0..3、每个seed三轮交替计时，共288次计时回合；另有96次完整轨迹回合。每个任务的A/B使用同一GPU、同一进程，GPU之间只分配独立任务，每张卡不并发多个任务。实际使用三张相同型号RTX 6000 Ada；跨任务时间之和不等于并行调度的总wall time。四个任务初次被上一进程退出后的非零GPU利用率采样拦截，未开始GPU试验，待卡满足空闲条件后补跑；没有覆盖已完成的测量。
+
+| 任务 | 已通过逐步检查的加速比 | 逐位轨迹检查 |
+| --- | ---: | --- |
+| grasp_easy | — | 未通过 |
+| catapult | — | 未通过 |
+| cartpole_thrust | 1.223× | 通过 |
+| hard_lunar_lander | 1.134× | 通过 |
+| mjc_half_cheetah | — | 未通过 |
+| mjc_swimmer | 1.125× | 通过 |
+| mjc_walker | 1.127× | 通过 |
+| h17_unicycle | 1.246× | 通过 |
+| chain_lander | 1.214× | 通过 |
+| catcher_v3 | 1.246× | 通过 |
+| trampoline | 1.240× | 通过 |
+| car_launch | 1.121× | 通过 |
+
+144对计时回合的结果均与对应trace结果一致，检查覆盖每种实现4914个控制状态和1243次模型输出。9关通过全部检查；3关虽有相同成功状态、步数和最终回合结果，但中间状态/动作hash不完全相同，保留原始耗时而不发布有效加速比。没有据此输出12关总体加速比，也不只挑通过关卡计算“全任务”平均。四个seed用于执行一致性和性能覆盖，不能代替每关128回合的质量实验。
+
+对grasp_easy、seed0的额外诊断发现，同一输入/状态下29个控制步的原始与JIT预处理命令全部逐位一致；原始实现自身和候选自身重复运行都出现不同状态hash序列，回合结果仍为成功、29步。固定seed因此不保证这套GPU物理执行逐位可重复，不能仅凭A/B hash差异断言预处理改变了任务动力学。
+
+原生Jax2D在关节/碰撞处理中有重复索引的scatter累加。[JAX 0.4.35的`at`说明](https://github.com/jax-ml/jax/blob/jax-v0.4.35/jax/_src/numpy/array_methods.py)指出，同一位置的并发更新顺序可能不确定。这是需要继续定位的候选原因；当前诊断没有锁定首个发生差异的物理算子。没有放宽检查阈值，也没有为取得通过结果而修改求解器、RNG或物理参数。
+
+多任务结果可用标准库分析工具重新审查；绘图额外使用Matplotlib：
+
+```bash
+# Each task directory contains the output of benchmark_eval.py --level TASK.
+"$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/analyze_eval_benchmarks.py \
+  --input runs/dynamic/kinetix/eval-speed-multitask-001
+```
+
+输出`analysis/analysis.json`、`task_metrics.csv`、英文`report.md`和`evaluation_speedup.png/.pdf`。脚本从原始计时与trace重新核对一致性，拒绝不同代码/依赖/硬件型号/实验配置的混合与重复任务；不信任文件内已经写好的speedup。任务缺失须显式`--allow-partial`，且不产生总体结论。完整且全部通过时，同时给出匹配rollout耗时总和之比和等任务权重的几何平均，两者分别命名。图中线段是三轮实测范围，不是置信区间。
+
+复现单任务重复性诊断：
+
+```bash
+"$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/diagnose_eval_preprocess.py \
+  --policy-dir "$ROBOTICS_KINETIX_POLICY_DIR" --gpu 0 \
+  --level grasp_easy --flow-steps 5 --seed 0 --repeatability-trials 10 \
+  --output-dir runs/dynamic/kinetix/preprocess-diagnostic-001
+```
+
+该工具先沿原始轨迹比较相同输入的两种预处理，再分别重复原始/候选回合，保存原始hash和语义事件、诊断源码快照及身份；额外同步会扰动执行时间，因此这些数据不用于性能结论。
+
+后续加速优先考虑减少逐步host调度/同步，以及多个独立环境的批量执行。12关原始路径的模型调用host span只占累计rollout约3.30%，环境约96.29%；若其余工作完全不变，即使消除全部模型调用成本，串行理想上界也仅约1.034×。设备端控制循环或批量化可能节省更多，但收益尚未测量；前提是保留每控制步的首次终止/finite检查和独立随机流，并先建立能区分原生数值波动与优化差异的验证方法。不得跳过检查或改变仿真时间片来制造加速。
