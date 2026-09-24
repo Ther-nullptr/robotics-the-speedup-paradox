@@ -93,6 +93,13 @@ def parser():
     p.add_argument("--n-action-steps", type=int, help="PI0.5 5; Cosmos 16")
     p.add_argument("--num-inference-steps", type=int, help="PI0.5 10; Cosmos 5")
     p.add_argument("--integer-tactic", type=int, choices=range(8), default=1)
+    p.add_argument(
+        "--initialization-retries",
+        type=int,
+        choices=range(17),
+        default=0,
+        help="RoboCasa only: observation-only retries against original sync initialization",
+    )
     p.add_argument("--layout-id", type=int, default=1)
     p.add_argument("--style-id", type=int, default=1)
     p.add_argument(
@@ -148,6 +155,8 @@ def csv_names(value):
 def build_plan(args):
     pi05 = args.case == "pi05_libero"
     casa = args.case == "cosmos_robocasa"
+    if args.initialization_retries and not casa:
+        raise ValueError("Initialization retries are supported only for RoboCasa")
     episodes = args.episodes if args.episodes is not None else (50 if casa else 500)
     seed = args.seed if args.seed is not None else (42 if pi05 else 195)
     actions = (
@@ -261,6 +270,10 @@ def build_plan(args):
                     command.extend(["--enable", switch])
                 reference = f"{task}/original-bf16/sync"
                 cell_id = f"{task}/{recipe}/{schedule}"
+                if casa and cell_id != reference and args.initialization_retries:
+                    command.extend(
+                        ["--initialization-retries", str(args.initialization_retries)]
+                    )
                 cells.append(
                     {
                         "id": cell_id,

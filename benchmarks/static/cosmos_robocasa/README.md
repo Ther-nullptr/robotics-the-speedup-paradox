@@ -103,3 +103,9 @@ BF16、INT8、INT4以及独立卷积、VAE逐元素融合、DiT attention后端�
 VAE 前缀裁剪与 LIBERO 共用同一适配器，RoboCasa 保留自己的41帧原始输入、11帧
 latent、5帧条件和三相机契约，在原生编码窗口下只执行前17帧。仅动作输出适用，
 辅助 clean-latent 后缀不保留。该选项与 VAE 归一化/SiLU 融合可分别回退。
+
+## 初始观测的严格匹配重试
+
+加载模型后的重复原生reset中，已观察到物理状态、XML和proprio相同而相机图像少量通道值相差1的现象。默认仍在首次不匹配时失败。显式提供 `--reference-run BASELINE --initialization-retries 8` 时，仅对初始观测指纹不一致额外重置最多8次；每次使用相同seed，必须最终逐字节匹配基线才开始推理。物理状态、XML、指令或身份不同立即失败，次数耗尽也失败，不放宽像素容差。
+
+此选项在 `run_episode` 的reset阶段生效，先于模型reset、历史观测缓存、视频首帧和动作请求；不按策略结果选择或重跑episode。`initialization-attempts.jsonl` 保存每次初始化的指纹、差异项和接受标记。额外reset时间属于环境准备成本，不计控制步数或chunk数。该选项是显式的配对初始化协议扩展，结果需记录启用情况；不能将其称为原生渲染完全确定性的证明。

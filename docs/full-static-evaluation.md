@@ -185,3 +185,5 @@ python tools/summarize_experiment.py \
 本入口先提供闭环质量与控制步数矩阵，不把 `run.log` 的运行耗时、视频编码耗时或步数比值自动标成论文加速比。量化的完整调用时延需要单独使用[推理 benchmark](../benchmarks/inference/README.md)，在同模型、配方、采样步数、GPU和输入口径下测量。随后按[加速比协议](protocols/speedup-metrics.md)关联质量结果与周期模型。
 
 Cosmos INT8/INT4 完整任务质量仍是待运行实验，不能根据脚本完成或 CPU 检查通过就宣称已验证。公开 CPU CI 只检查计划、统计和执行管理，不下载模型、不运行模拟器，也不调用实验室 GPU。
+
+RoboCasa 如遇物理状态/XML一致而初始观测指纹偶发不同，可在新矩阵命令中显式添加 `--initialization-retries 16`。仅原始同步基线以外的配对组启用；它在首次推理前重置同一seed，最多额外16次，仍要求最终逐字节匹配，其他初始化差异立即失败。详见[初始化重试说明](../benchmarks/static/cosmos_robocasa/README.md#初始观测的严格匹配重试)。不能向既有矩阵追加该参数后直接 `--resume`：参数或源码变更需要新目录和显式的来源记录。
