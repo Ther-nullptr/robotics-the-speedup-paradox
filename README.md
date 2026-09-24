@@ -18,6 +18,7 @@
 | [推理优化](benchmarks/inference/README.md) | 本仓模型热路径；独立BF16融合、CUDA Graph、INT4/INT8开关；逐轮图表 | Ada算子测试、固定输入动作校验与单回合闭环；量化全量质量待验证 |
 | [资源准备](tools/RESOURCE_PREPARATION.md) | 下载或复用 checkpoint、tokenizer、统计量、T5；训练数据按需下载 | 两类模型本地资源复用、真实小文件下载、启动预检 |
 | [实验统计](tools/summarize_experiment.py) | 成功率、失败按预算惩罚的总体步数、仅成功步数；按任务汇总 | CLI 与实验结束时自动调用 |
+| [统一实验记录](docs/study-records.md) | 跨批次索引、成功平均chunk、独立推理计时及复用来源 | CPU工具从原始记录重算，保留批次边界 |
 | [轨迹分析](tools/embodied/README.md) | 轨迹绘制、速度、加速度、jerk | CPU 数值工具与合成样例 |
 | [契约与加速比](docs/protocols/speedup-metrics.md) | manifest/trace 校验、固定 baseline 的加速比计算 | CPU 契约和显式输入计算 |
 
