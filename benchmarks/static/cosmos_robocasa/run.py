@@ -25,7 +25,7 @@ shared = load_file(
 )
 
 
-def check_reference(reference, index, actual):
+def reference_mismatches(reference, index, actual):
     expected = json.loads(
         (
             Path(reference) / "initializations" / f"{index:06d}" / "episode.json"
@@ -42,9 +42,66 @@ def check_reference(reference, index, actual):
         "initial_xml_sha256",
         "initial_observation_sha256",
     )
-    mismatch = [key for key in keys if expected.get(key) != actual.get(key)]
+    return [key for key in keys if expected.get(key) != actual.get(key)]
+
+
+def check_reference(reference, index, actual):
+    mismatch = reference_mismatches(reference, index, actual)
     if mismatch:
         raise RuntimeError(f"Episode initialization differs from reference: {mismatch}")
+
+
+class ReferenceReset:
+    """Bounded observation-only retries before any policy request or control step.
+
+    Every accepted reset must exactly match the reference. State, XML, language
+    and identity mismatches are fatal immediately; no tolerance is introduced.
+    """
+
+    def __init__(self, simulator, reference, output, retries):
+        self.simulator = simulator
+        self.reference = reference
+        self.output = Path(output)
+        if type(retries) is not int or not 0 <= retries <= 16:
+            raise ValueError("Initialization retries must be in 0..16")
+        self.retries = retries
+
+    def __getattr__(self, name):
+        return getattr(self.simulator, name)
+
+    def reset(self, init_state_id, seed=None):
+        for attempt in range(self.retries + 1):
+            observation = self.simulator.reset(init_state_id, seed=seed)
+            actual = self.simulator.episode_metadata
+            mismatch = reference_mismatches(self.reference, init_state_id, actual)
+            record = {
+                "init_state_id": init_state_id,
+                "env_seed": seed,
+                "attempt": attempt + 1,
+                "accepted": not mismatch,
+                "mismatches": mismatch,
+                **{
+                    key: actual[key]
+                    for key in (
+                        "initial_state_sha256",
+                        "initial_xml_sha256",
+                        "initial_observation_sha256",
+                    )
+                },
+            }
+            with (self.output / "initialization-attempts.jsonl").open("a") as stream:
+                stream.write(json.dumps(record, allow_nan=False) + "\n")
+            if not mismatch:
+                return observation
+            if mismatch != ["initial_observation_sha256"] or attempt == self.retries:
+                raise RuntimeError(
+                    f"Episode initialization differs from reference: {mismatch}"
+                )
+            print(
+                f"Retry initialization {init_state_id}: observation differs, attempt {attempt + 1}/{self.retries + 1}",
+                flush=True,
+            )
+        raise AssertionError("Unreachable reset state")
 
 
 def execute(plan):
@@ -148,6 +205,13 @@ def execute(plan):
                 layout_id=opts["layout_id"],
                 style_id=opts["style_id"],
             )
+            if opts.get("initialization_retries", 0):
+                simulator = ReferenceReset(
+                    simulator,
+                    plan["reference_run"],
+                    output,
+                    opts["initialization_retries"],
+                )
             video = None
             if opts["record_video"]:
                 import imageio.v2 as imageio

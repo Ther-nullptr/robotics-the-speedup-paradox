@@ -56,6 +56,13 @@ def build_parser():
     }.items():
         parser.add_argument("--" + name, type=int, default=default)
     parser.add_argument("--max-steps", type=int)
+    parser.add_argument(
+        "--initialization-retries",
+        type=int,
+        choices=range(17),
+        default=0,
+        help="Explicit observation-only reset retries against --reference-run; exact matching remains required",
+    )
     parser.add_argument("--schedule", choices=("sync", "paper_async"))
     parser.add_argument("--quant", choices=("none",), default="none")
     parser.add_argument("--gpu")
@@ -100,9 +107,12 @@ def build_plan(args):
         raise ValueError("--gpu must select one GPU index or full GPU UUID")
     if not args.dry_run and args.gpu is None:
         raise ValueError("Actual execution requires an explicit --gpu")
+    if args.initialization_retries and args.reference_run is None:
+        raise ValueError("Initialization retries require --reference-run")
     options = {
         name: getattr(args, name)
         for name in (
+            "initialization_retries",
             "task",
             "episodes",
             "layout_id",

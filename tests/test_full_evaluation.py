@@ -260,3 +260,20 @@ identity = {'frozen': 'yes', 'case': {'episodes': 1}}
     stub.unlink()
     driver.execute(resumed)
     assert driver.summarize(resumed)["complete"] is True
+
+
+def test_initialization_retries_only_apply_to_robocasa_variants(driver, tmp_path):
+    matrix = plan(
+        driver,
+        tmp_path,
+        "cosmos_robocasa",
+        "--tasks",
+        "OpenDrawer",
+        "--initialization-retries",
+        "16",
+    )
+    assert "--initialization-retries" not in matrix["cells"][0]["command"]
+    for cell in matrix["cells"][1:]:
+        assert value(cell["command"], "--initialization-retries") == "16"
+    with pytest.raises(ValueError, match="RoboCasa"):
+        plan(driver, tmp_path, "pi05_libero", "--initialization-retries", "1")
