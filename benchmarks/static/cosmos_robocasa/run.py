@@ -58,28 +58,157 @@ class ReferenceReset:
     and identity mismatches are fatal immediately; no tolerance is introduced.
     """
 
-    def __init__(self, simulator, reference, output, retries):
+    def __init__(self, simulator, reference, output, retries, snapshots=None):
         self.simulator = simulator
         self.reference = reference
         self.output = Path(output)
         if type(retries) is not int or not 0 <= retries <= 16:
             raise ValueError("Initialization retries must be in 0..16")
         self.retries = retries
+        self.snapshots = snapshots
+        self._metadata = None
+        self._initial_frame = None
+        self._rendered_observation = None
+        self._consumed_observation = None
 
     def __getattr__(self, name):
         return getattr(self.simulator, name)
 
+    @property
+    def episode_metadata(self):
+        return (
+            self._metadata
+            if self._metadata is not None
+            else self.simulator.episode_metadata
+        )
+
+    def render(self):
+        return (
+            self._initial_frame.copy()
+            if self._initial_frame is not None
+            else self.simulator.render()
+        )
+
+    def step(self, action):
+        self._initial_frame = None
+        return self.simulator.step(action)
+
+    def save_initialization(self, directory):
+        self.simulator.save_initialization(directory)
+        if self._consumed_observation is not None:
+            import numpy as np
+
+            metadata_path = Path(directory) / "episode.json"
+            metadata = json.loads(metadata_path.read_text())
+            metadata.update(
+                {
+                    key: self._metadata[key]
+                    for key in (
+                        "initial_observation_sha256",
+                        "initial_rendered_observation_sha256",
+                        "initial_observation_replay",
+                    )
+                }
+            )
+            shared.write_json(metadata_path, metadata)
+            np.savez(
+                Path(directory) / "rendered-observation.npz",
+                **self._rendered_observation,
+            )
+            np.savez(
+                Path(directory) / "consumed-observation.npz",
+                **self._consumed_observation,
+            )
+
     def reset(self, init_state_id, seed=None):
+        self._metadata = None
+        self._initial_frame = None
+        self._rendered_observation = self._consumed_observation = None
         for attempt in range(self.retries + 1):
             observation = self.simulator.reset(init_state_id, seed=seed)
             actual = self.simulator.episode_metadata
             mismatch = reference_mismatches(self.reference, init_state_id, actual)
+            replay_audit = None
+            if mismatch == ["initial_observation_sha256"] and self.snapshots:
+                from robotics_bench.simulators.reference_observation import (
+                    restore_reference_observation,
+                )
+
+                expected = json.loads(
+                    (
+                        Path(self.reference)
+                        / "initializations"
+                        / f"{init_state_id:06d}"
+                        / "episode.json"
+                    ).read_text()
+                )
+                try:
+                    replay = restore_reference_observation(
+                        self.snapshots, init_state_id, expected, actual, observation
+                    )
+                except (ValueError, KeyError, TypeError, OSError) as exc:
+                    with (self.output / "initialization-attempts.jsonl").open(
+                        "a"
+                    ) as stream:
+                        stream.write(
+                            json.dumps(
+                                {
+                                    "init_state_id": init_state_id,
+                                    "env_seed": seed,
+                                    "attempt": attempt + 1,
+                                    "accepted": False,
+                                    "mismatches": mismatch,
+                                    "initial_state_sha256": actual[
+                                        "initial_state_sha256"
+                                    ],
+                                    "initial_xml_sha256": actual["initial_xml_sha256"],
+                                    "initial_observation_sha256": actual[
+                                        "initial_observation_sha256"
+                                    ],
+                                    "observation_replay_error": f"{type(exc).__name__}: {exc}",
+                                }
+                            )
+                            + "\n"
+                        )
+                    raise
+                if replay is not None:
+                    import numpy as np
+
+                    self._rendered_observation = observation
+                    observation, replay_audit = replay
+                    self._consumed_observation = observation
+                    self._metadata = {
+                        **actual,
+                        "initial_observation_sha256": replay_audit[
+                            "consumed_observation_sha256"
+                        ],
+                        "initial_rendered_observation_sha256": replay_audit[
+                            "rendered_observation_sha256"
+                        ],
+                        "initial_observation_replay": replay_audit,
+                    }
+                    actual = self._metadata
+                    self._initial_frame = np.concatenate(
+                        [
+                            observation[key][::-1]
+                            for key in (
+                                "primary_image",
+                                "secondary_image",
+                                "wrist_image",
+                            )
+                        ],
+                        axis=1,
+                    )
+                    mismatch = reference_mismatches(
+                        self.reference, init_state_id, actual
+                    )
             record = {
                 "init_state_id": init_state_id,
                 "env_seed": seed,
                 "attempt": attempt + 1,
                 "accepted": not mismatch,
                 "mismatches": mismatch,
+                "observation_replay": replay_audit,
                 **{
                     key: actual[key]
                     for key in (
@@ -205,12 +334,15 @@ def execute(plan):
                 layout_id=opts["layout_id"],
                 style_id=opts["style_id"],
             )
-            if opts.get("initialization_retries", 0):
+            if opts.get("initialization_retries", 0) or plan.get(
+                "reference_observations"
+            ):
                 simulator = ReferenceReset(
                     simulator,
                     plan["reference_run"],
                     output,
                     opts["initialization_retries"],
+                    snapshots=plan.get("reference_observations"),
                 )
             video = None
             if opts["record_video"]:
@@ -282,6 +414,16 @@ def execute(plan):
                         initial_observation_sha256=simulator.episode_metadata[
                             "initial_observation_sha256"
                         ],
+                        initial_rendered_observation_sha256=simulator.episode_metadata.get(
+                            "initial_rendered_observation_sha256",
+                            simulator.episode_metadata["initial_observation_sha256"],
+                        ),
+                        initial_observation_source="reference_snapshot"
+                        if simulator.episode_metadata.get("initial_observation_replay")
+                        else "native",
+                        initial_observation_replay=simulator.episode_metadata.get(
+                            "initial_observation_replay"
+                        ),
                         reference_initialization_passed=True
                         if plan["reference_run"]
                         else None,

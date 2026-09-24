@@ -109,3 +109,23 @@ latent、5帧条件和三相机契约，在原生编码窗口下只执行前17�
 加载模型后的重复原生reset中，已观察到物理状态、XML和proprio相同而相机图像少量通道值相差1的现象。默认仍在首次不匹配时失败。显式提供 `--reference-run BASELINE --initialization-retries 8` 时，仅对初始观测指纹不一致额外重置最多8次；每次使用相同seed，必须最终逐字节匹配基线才开始推理。物理状态、XML、指令或身份不同立即失败，次数耗尽也失败，不放宽像素容差。
 
 此选项在 `run_episode` 的reset阶段生效，先于模型reset、历史观测缓存、视频首帧和动作请求；不按策略结果选择或重跑episode。`initialization-attempts.jsonl` 保存每次初始化的指纹、差异项和接受标记。额外reset时间属于环境准备成本，不计控制步数或chunk数。该选项是显式的配对初始化协议扩展，结果需记录启用情况；不能将其称为原生渲染完全确定性的证明。
+
+## 显式初始观测快照
+
+`--reference-observations DIRECTORY` 是独立、默认关闭的初始化协议扩展，必须配合 `--reference-run` 使用。它用于原生渲染只有已证实的少量像素取整波动、而物理状态和场景严格相同的配对实验；不是对整个图像应用宽松容差。
+
+目录按初态编号包含 `000007.npz` 和 `000007.json` 等配对文件。NPZ只能含 `primary_image`、`secondary_image`、`wrist_image`、`proprio`；其内容哈希必须与原基线的 `initial_observation_sha256` 完全一致。JSON的 `format` 为 `robocasa-reference-observation-v1`，`reference` 绑定任务、初态、环境seed、layout/style、指令、物理状态/XML/观测哈希；`allowed_pixel_variations` 逐项声明 `key`、三维像素通道 `index` 和两个相邻uint8 `values`。最多允许32个明确位置，不能声明proprio变化。快照应来自经过核验的真实原生初始化采集；原始采集及诊断来源随本地实验产物保存。
+
+只有物理状态、XML、指令和身份完全匹配时才检查快照。proprio保持逐字节相同；任何未列位置、超过声明值或超过1灰度级的变化都立即失败。通过后，仅reset观测替换为基线快照；历史缓存如何再次使用它继续遵循原来的 `paper_async` 协议，`initial_observation_sha256` 表示实际消费的输入，额外保存 `initial_rendered_observation_sha256` 和 `initial_observation_replay`。逐回合ledger标明观测来源和原始渲染哈希；初始化目录同时保存原始渲染和实际消费的NPZ；首帧视频对应实际输入，执行第一条控制后完全回到实时观测和视频。物理状态、后续观测、动作、奖励和终止条件均不替换。
+
+快照文件内容进入case身份。未提供某个episode快照时继续原生严格匹配／有界重试；不得把这个协议的成功称为原生渲染逐位确定性。直接case入口示例：
+
+```bash
+bash benchmarks/static/cosmos_robocasa/run.sh \
+  --task OpenDrawer --episodes 10 --schedule paper_async --overlap-actions 2 \
+  --reference-run /path/to/completed/baseline \
+  --reference-observations /path/to/audited/initial-observations \
+  --initialization-retries 16 --gpu 0 --output-dir runs/static/cosmos_robocasa/paired-001
+```
+
+当前完整矩阵驱动不自动生成或选择快照；这项研究使用显式case命令和独立来源记录，不能直接混入旧矩阵恢复。

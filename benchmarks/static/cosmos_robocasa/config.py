@@ -55,6 +55,11 @@ def build_parser():
         "overlap-actions": 0,
     }.items():
         parser.add_argument("--" + name, type=int, default=default)
+    parser.add_argument(
+        "--reference-observations",
+        type=Path,
+        help="Explicit certified initial-observation snapshots; requires --reference-run",
+    )
     parser.add_argument("--max-steps", type=int)
     parser.add_argument(
         "--initialization-retries",
@@ -107,8 +112,10 @@ def build_plan(args):
         raise ValueError("--gpu must select one GPU index or full GPU UUID")
     if not args.dry_run and args.gpu is None:
         raise ValueError("Actual execution requires an explicit --gpu")
-    if args.initialization_retries and args.reference_run is None:
-        raise ValueError("Initialization retries require --reference-run")
+    if (
+        args.initialization_retries or args.reference_observations
+    ) and args.reference_run is None:
+        raise ValueError("Initialization retries/snapshots require --reference-run")
     options = {
         name: getattr(args, name)
         for name in (
@@ -196,7 +203,29 @@ def build_plan(args):
             },
         },
     }
+    snapshots = (
+        args.reference_observations.expanduser().resolve()
+        if args.reference_observations
+        else None
+    )
+    if snapshots:
+        if not snapshots.is_dir():
+            raise ValueError("Reference observation directory is missing")
+        files = sorted(snapshots.glob("*.npz"))
+        if not files or any(not re.fullmatch(r"[0-9]{6}\.npz", p.name) for p in files):
+            raise ValueError(
+                "Reference observations require episode-named NPZ snapshots"
+            )
+        snapshot_files = [
+            file
+            for p in files
+            for file in (p, common._required_file(p.with_suffix(".json")))
+        ]
+        identity["reference_observations_sha256"] = {
+            p.name: common._file_hash(p) for p in snapshot_files
+        }
     return {
+        "reference_observations": str(snapshots) if snapshots else None,
         "format": "cosmos-robocasa-run-v1",
         "case_id": "cosmos_robocasa",
         "run_kind": "smoke" if args.episodes == 1 else "evaluation",
