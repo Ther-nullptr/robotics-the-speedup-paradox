@@ -128,6 +128,15 @@ class ReferenceReset:
             observation = self.simulator.reset(init_state_id, seed=seed)
             actual = self.simulator.episode_metadata
             mismatch = reference_mismatches(self.reference, init_state_id, actual)
+            if mismatch and hasattr(self.simulator, "save_initialization"):
+                rejected = (
+                    self.output
+                    / "initialization-rejections"
+                    / f"{init_state_id:06d}"
+                    / f"{attempt + 1:02d}"
+                )
+                rejected.parent.mkdir(parents=True, exist_ok=True)
+                self.simulator.save_initialization(rejected)
             replay_audit = None
             if mismatch == ["initial_observation_sha256"] and self.snapshots:
                 from robotics_bench.simulators.reference_observation import (
