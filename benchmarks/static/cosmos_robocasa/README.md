@@ -129,3 +129,5 @@ bash benchmarks/static/cosmos_robocasa/run.sh \
 ```
 
 当前完整矩阵驱动不自动生成或选择快照；这项研究使用显式case命令和独立来源记录，不能直接混入旧矩阵恢复。
+
+初始化记录现在同时保存 `rendered-observation.npz`，包含实际reset的三相机和proprio原始数组，便于之后直接检查像素差异。启用显式快照协议时，另存实际消费的 `consumed-observation.npz`；原始渲染始终保留。保存发生在策略请求之前，不改变模型输入、物理状态或控制计数。

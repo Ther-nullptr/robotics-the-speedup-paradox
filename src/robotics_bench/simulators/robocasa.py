@@ -120,6 +120,7 @@ class NativeRoboCasaSimulator:
         self._closed = False
         self._initial_state = None
         self._initial_xml = None
+        self._initial_observation = None
 
     def _observation(self, native):
         np = importlib.import_module("numpy")
@@ -149,6 +150,7 @@ class NativeRoboCasaSimulator:
         self.episode_metadata = None
         self._initial_state = None
         self._initial_xml = None
+        self._initial_observation = None
         if self._env is not None:
             self._env.close()
             self._env = None
@@ -199,6 +201,9 @@ class NativeRoboCasaSimulator:
                     "RoboCasa task is already successful before policy control"
                 )
             observation = self._observation(native)
+            self._initial_observation = {
+                key: value.copy() for key, value in observation.items()
+            }
             self.control_dt = float(self._env.control_timestep)
             self._initial_state = np.array(
                 self._env.sim.get_state().flatten(), copy=True
@@ -243,6 +248,7 @@ class NativeRoboCasaSimulator:
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=False)
         np.save(directory / "state.npy", self._initial_state, allow_pickle=False)
+        np.savez(directory / "rendered-observation.npz", **self._initial_observation)
         (directory / "model.xml").write_text(self._initial_xml)
         (directory / "episode.json").write_text(
             json.dumps(
@@ -280,3 +286,4 @@ class NativeRoboCasaSimulator:
         self._ready = False
         self._closed = True
         self._frame = None
+        self._initial_observation = None
