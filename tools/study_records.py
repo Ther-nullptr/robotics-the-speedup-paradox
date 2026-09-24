@@ -148,7 +148,7 @@ def timing(binding, base, options, manifest, tier, run):
     if len(entries) != 1:
         raise ValueError("Timing variant must identify exactly one measurement")
     row = entries[0]
-    if row.get("precision") in ("int8", "int4"):
+    if row.get("precision") in ("int8", "int4") or row.get("quant_tier") is not None:
         optimizations = options.get("optimizations", {})
         if set(row.get("scopes", [])) != set(optimizations.get("scopes", [])):
             raise ValueError("Timing quantization scopes differ from quality run")

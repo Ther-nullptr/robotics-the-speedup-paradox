@@ -237,3 +237,46 @@ def test_registry_keeps_study_boundaries(study, tmp_path):
     second.write_text(json.dumps(descriptor))
     with pytest.raises(ValueError, match="explicit reuse"):
         module.register(second, registry)
+
+
+def test_progressive_timing_rejects_wrong_integer_tactic(study, tmp_path):
+    _, run = study
+    manifest = json.loads((run / "case-manifest.json").read_text())
+    timing = tmp_path / "timing"
+    timing.mkdir()
+    (timing / "manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "case": "cosmos_robocasa",
+                "model": {
+                    "steps": 5,
+                    "horizon": 32,
+                    "checkpoint": "policy.pt",
+                    "runtime": "owned",
+                },
+            }
+        )
+    )
+    (timing / "measurements.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "tier-01",
+                    "precision": "w4-t1",
+                    "quant_tier": 1,
+                    "scopes": ["dit"],
+                    "tactic": 7,
+                }
+            ]
+        )
+    )
+    with pytest.raises(ValueError, match="integer tactic"):
+        tool().timing(
+            {"run_dir": str(timing), "variant_id": "tier-01"},
+            tmp_path,
+            manifest["options"],
+            manifest,
+            1,
+            run,
+        )
