@@ -1,5 +1,7 @@
 # π0.5＋LIBERO 静态 case
 
+完整同步／论文异步矩阵的手动运行、日志与恢复方法见[完整静态实验指南](../../../docs/full-static-evaluation.md)。
+
 使用 [run.sh](run.sh) 直接从命令行选择原精度同步或论文异步实验，不需要手写JSON。它通过 [run.py](run.py) 调用用户提供的兼容VLASH sim evaluator，使用原生LeRobot π0.5及同源processors；不使用VLASH微调checkpoint，也不做预测状态替换。当前没有内置量化模型预设。
 
 ## 配置一次本机路径

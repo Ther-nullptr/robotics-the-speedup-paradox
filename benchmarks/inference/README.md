@@ -353,3 +353,11 @@ timing. Nonidentity text projections, image cross-attention, training and contex
 parallelism are unsupported. Weights and precision must remain immutable while
 the optimization context is active. The engine and each cache require serialized
 calls; use distinct model instances for concurrent requests.
+
+## Full closed-loop evaluation
+
+Use the [manual static evaluation guide](../../docs/full-static-evaluation.md)
+to run matched Cosmos original/optimized BF16, INT8 and INT4 under sync and
+`paper_async`, or PI0.5 BF16 sync/`paper_async`. The matrix driver reuses the
+case launchers and aggregates success and control steps; it does not substitute
+simulator wall time for the complete policy timings measured here.
