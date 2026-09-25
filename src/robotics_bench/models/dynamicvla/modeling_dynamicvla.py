@@ -384,6 +384,9 @@ class DynamicVLAPolicy(PreTrainedPolicy):
     def _get_action_chunk(
         self, batch: dict[str, torch.Tensor], noise: torch.Tensor | None = None
     ) -> torch.Tensor:
+        measure = getattr(self.config, "measure_inference", False)
+        if measure and batch[OBS_STATE].device.type == "cuda":
+            torch.cuda.synchronize(batch[OBS_STATE].device)
         tick = time.perf_counter()
         for k in batch:
             if k in self._queues and k != ACTION:
@@ -406,6 +409,12 @@ class DynamicVLAPolicy(PreTrainedPolicy):
             actions = self._pi_aloha_encode_actions(actions)
 
         inference_time = time.perf_counter() - tick
+        model_compute_ms = None
+        if measure:
+            if batch[OBS_STATE].device.type == "cuda":
+                torch.cuda.synchronize(batch[OBS_STATE].device)
+            model_compute_ms = (time.perf_counter() - tick) * 1000
+        native_pacing_ms = 0.0
         if (
             not getattr(self.config, "disable_dt_scale_sleep", False)
             and "dt_scale" in batch
@@ -417,7 +426,9 @@ class DynamicVLAPolicy(PreTrainedPolicy):
                 "[Step%03d] Inference Time: %.4fs; Sleep Time: %.4fs"
                 % (batch["index"], inference_time, sleep_time)
             )
+            pacing_start = time.perf_counter()
             time.sleep(sleep_time)
+            native_pacing_ms = (time.perf_counter() - pacing_start) * 1000
 
         self._generated_chunks += 1
         self.generation_events.append(
@@ -429,6 +440,16 @@ class DynamicVLAPolicy(PreTrainedPolicy):
                 "started_wall_s": tick,
                 "finished_wall_s": time.perf_counter(),
                 "model_host_duration_s": inference_time,
+                "model_compute_ms": model_compute_ms,
+                "native_pacing_ms": native_pacing_ms,
+                "action_dtype": str(actions.dtype),
+                "chunk_observation_index": batch.get(
+                    "chunk_observation_index", batch.get("index")
+                ),
+                "chunk_observation_sim_time_s": batch.get(
+                    "chunk_observation_sim_time_s"
+                ),
+                "chunk_observation_wall_s": batch.get("chunk_observation_wall_s"),
                 "generated_actions": int(actions.shape[1]),
                 "dt_scale": batch.get("dt_scale", 1.0),
             }
@@ -527,6 +548,11 @@ class DynamicVLAPolicy(PreTrainedPolicy):
                     "index": actions["index"] + i,
                     "action": a,
                     "chunk_id": actions["chunk_id"],
+                    "chunk_observation_index": actions.get("chunk_observation_index"),
+                    "chunk_observation_sim_time_s": actions.get(
+                        "chunk_observation_sim_time_s"
+                    ),
+                    "chunk_observation_wall_s": actions.get("chunk_observation_wall_s"),
                 }
                 for i, a in enumerate(actions["actions"])
             ]
@@ -559,6 +585,9 @@ class DynamicVLAPolicy(PreTrainedPolicy):
             self.last_action_metadata = {
                 "chunk_id": action["chunk_id"],
                 "action_index": action["index"],
+                "chunk_observation_index": action["chunk_observation_index"],
+                "chunk_observation_sim_time_s": action["chunk_observation_sim_time_s"],
+                "chunk_observation_wall_s": action["chunk_observation_wall_s"],
             }
             return action["action"]
 

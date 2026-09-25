@@ -31,6 +31,9 @@ def run(args):
         num_steps=args.num_steps,
         rotation=args.rotation,
         seed=args.seed,
+        measure_inference=args.measure_inference,
+        extra_delay_ms=args.extra_delay_ms,
+        episode_seed_mode=args.episode_seed_mode,
     )
     context = zmq.Context()
     obs = context.socket(zmq.SUB)
@@ -142,6 +145,14 @@ def run(args):
                 end = time.perf_counter()
                 for event in engine.drain_events():
                     append(requests, event)
+                    if args.measure_inference and event["kind"] == "chunk_generated":
+                        actions.send_pyobj(
+                            {
+                                "kind": "model_progress",
+                                "episode_id": event["episode_id"],
+                                "chunk_id": event["chunk_id"],
+                            }
+                        )
                 if action is not None:
                     if action.shape != (1, 8) or not np.isfinite(action).all():
                         raise ValueError("Model returned invalid DOM action")
@@ -201,6 +212,9 @@ def main():
     parser.add_argument(
         "--rotation", choices=("euler", "rotvec", "quat"), default="euler"
     )
+    parser.add_argument("--measure-inference", action="store_true")
+    parser.add_argument("--extra-delay-ms", type=float, default=0)
+    parser.add_argument("--episode-seed-mode", action="store_true")
     parser.add_argument("--streaming", action="store_true")
     parser.add_argument("--timeout", type=float, default=600)
     args = parser.parse_args()

@@ -8,6 +8,7 @@ from collections import deque
 import copy
 from dataclasses import fields
 import json
+import math
 from pathlib import Path
 
 
@@ -20,6 +21,9 @@ class DynamicVLAEngine:
         num_steps=None,
         rotation="euler",
         seed=None,
+        measure_inference=False,
+        extra_delay_ms=0.0,
+        episode_seed_mode=False,
     ):
         self.checkpoint = Path(checkpoint).expanduser().resolve()
         if rotation not in ("quat", "rotvec", "euler"):
@@ -29,6 +33,17 @@ class DynamicVLAEngine:
             raise ValueError("seed must be a nonnegative integer")
         self.rotation = rotation
         self.streaming = bool(streaming)
+        self.measure_inference = bool(measure_inference)
+        self.extra_delay_ms = float(extra_delay_ms)
+        self.episode_seed_mode = bool(episode_seed_mode)
+        if not math.isfinite(self.extra_delay_ms) or self.extra_delay_ms < 0:
+            raise ValueError("extra_delay_ms must be finite and nonnegative")
+        if not self.streaming and (
+            self.measure_inference or self.extra_delay_ms or self.episode_seed_mode
+        ):
+            raise ValueError("Latency study options require native streaming")
+        if self.episode_seed_mode and seed is None:
+            raise ValueError("episode_seed_mode requires an explicit base seed")
         self.device = str(device)
         if num_steps is not None and (type(num_steps) is not int or num_steps < 1):
             raise ValueError("num_steps must be a positive integer")
@@ -90,6 +105,9 @@ class DynamicVLAEngine:
             raise RuntimeError(f"Requested device {self.device} is unavailable")
         config.device = self.device
         config.runtime_seed = self.seed
+        config.measure_inference = self.measure_inference
+        config.extra_delay_ms = self.extra_delay_ms
+        config.episode_seed_mode = self.episode_seed_mode
         self._offsets = (raw.get("delta_timestamps") or {}).get("observation", [0])
         if len(self._offsets) != config.n_obs_steps or any(
             type(x) is not int or x > 0 for x in self._offsets
@@ -130,6 +148,8 @@ class DynamicVLAEngine:
             if event["kind"] == "chunk_generated":
                 episode = str(event["episode_id"])
                 self._counts[episode] = self._counts.get(episode, 0) + 1
+                if event.get("model_parameter_dtypes") is not None:
+                    self._parameter_dtypes = event["model_parameter_dtypes"]
             self._events.append(event)
 
     def drain_events(self):
@@ -152,6 +172,10 @@ class DynamicVLAEngine:
         self._record_events(drain(self.policy))
         if self.streaming:
             self._record_events(reset_episode(self.policy, episode_id))
+        if self.episode_seed_mode:
+            import torch
+
+            torch.manual_seed(self.seed + episode_id)
         self.policy.reset()
         self.policy._episode_id = episode_id
         self.episode_id = episode_id
@@ -190,6 +214,13 @@ class DynamicVLAEngine:
             "cpu" if self.streaming else self.device,
         )
         batch["_episode_id"] = self.episode_id
+        # Attach the generating observation, not a later selection/transport frame.
+        for source, target in (
+            ("sim_time_s", "chunk_observation_sim_time_s"),
+            ("wall_time_s", "chunk_observation_wall_s"),
+        ):
+            if source in observation:
+                batch[target] = observation[source]
         action = self.policy.select_action(batch)
         self._action_calls += 1
         if action is None:
@@ -220,7 +251,15 @@ class DynamicVLAEngine:
             "streaming": self.streaming,
             "rotation": self.rotation,
             "seed": self.seed,
-            "rng_policy": "Seed once before model construction; continuous RNG across episodes; native streaming warmup consumes RNG",
+            "rng_policy": (
+                "Seed base + episode_id at each reset barrier; native warmup excluded by episode reseed"
+                if self.episode_seed_mode
+                else "Seed once before model construction; continuous RNG across episodes; native streaming warmup consumes RNG"
+            ),
+            "episode_seed_mode": self.episode_seed_mode,
+            "measure_inference": self.measure_inference,
+            "model_parameter_dtypes": getattr(self, "_parameter_dtypes", None),
+            "extra_delay_ms": self.extra_delay_ms,
             "device": self.device,
             "episode_id": self.episode_id,
             "generated_chunks_by_episode": dict(self._counts),
