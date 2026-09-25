@@ -66,11 +66,11 @@ def options(tmp_path):
     return module().parser().parse_args(argv)
 
 
-def test_default_dense_plan_has_7200_new_paired_episodes(options):
+def test_default_dense_plan_has_3600_paired_episodes(options):
     m = module()
     plan, output = m.plan_campaign(options)
-    assert plan["expected_episodes"] == 7200
-    assert plan["delays_ms"] == list(range(0, 501, 25)) + [600, 700, 800]
+    assert plan["expected_episodes"] == 3600
+    assert plan["delays_ms"] == list(range(0, 501, 50)) + [800]
     assert [b["seed"] for b in plan["blocks"]] == list(range(42, 142, 10))
     assert all(b["episodes"] == 10 for b in plan["blocks"])
     command = m.block_command(plan, plan["blocks"][1], output)

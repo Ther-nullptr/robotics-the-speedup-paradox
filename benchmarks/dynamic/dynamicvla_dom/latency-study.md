@@ -138,11 +138,11 @@ or accuracy point is inferred for an incomplete cell.
 
 ## Dense grid with more repetitions
 
-For a finer curve, `dense_study.py` defaults to0–500ms in25ms increments plus
-600/700/800ms (24conditions),100episodes per scene/condition, split into ten
-10-seed blocks. Three scenes therefore produce7200new episodes. Model weights,
-refinement steps, native40ms physics and GPU pair remain fixed. A25ms wall-delay
-increment does not imply25ms physics or guarantee an exactly25ms change in
+For a finer curve, `dense_study.py` defaults to0–500ms in50ms increments plus
+800ms (12conditions),100episodes per scene/condition, split into ten
+10-seed blocks. Three scenes therefore produce3600episodes. Model weights,
+refinement steps, native40ms physics and GPU pair remain fixed. A50ms wall-delay
+increment does not imply50ms physics or guarantee an exactly50ms change in
 observed service/action latency; report the actual measured distributions.
 
 ```bash
@@ -178,7 +178,7 @@ episodes are not silently mixed into treatment comparisons. `--plot` writes
 PNG/PDF after each completed block with an interim/final label. Final estimates
 use300episodes per delay across three scenes and remain conditional on those
 fixed scenes; confidence intervals are descriptive, not simultaneous evidence
-that one of24delays is optimal.
+that one of12delays is optimal.
 
 Independent cumulative refresh:
 

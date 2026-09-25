@@ -30,9 +30,7 @@ def parser():
     p = runner.parser()
     p.description = __doc__
     p.add_argument("--task-json", type=Path, action="append", required=True)
-    p.add_argument(
-        "--delays-ms", default=",".join(map(str, [*range(0, 501, 25), 600, 700, 800]))
-    )
+    p.add_argument("--delays-ms", default=",".join(map(str, [*range(0, 501, 50), 800])))
     p.add_argument("--block-episodes", type=int, default=10)
     p.add_argument("--order-seed", type=int, default=20260926)
     p.add_argument(
