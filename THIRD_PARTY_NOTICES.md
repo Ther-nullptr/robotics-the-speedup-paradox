@@ -1,6 +1,6 @@
 # 第三方来源与发布状态
 
-本仓库包含已记录来源的 PI0.5、Cosmos 推理代码和独立算子副本，具体范围见下文及各目录 PROVENANCE.json。TurboVLA、Jetson-PI、Jetson-PI-Edge 和 OxyGen 仍是研究参考；本仓不包含模型权重、数据集或模拟器实现。外部依赖和资产仍遵守各自条款。
+本仓库包含已记录来源的 PI0.5、Cosmos 推理代码和独立算子副本，具体范围见下文及各目录 PROVENANCE.json。TurboVLA、Jetson-PI、Jetson-PI-Edge 和 OxyGen 仍是研究参考；本仓不包含模型权重或大型数据集；已迁入的模拟器执行源码及小型资产分别在下文记录。外部依赖和资产仍遵守各自条款。
 
 ## Cosmos＋LIBERO 外部调用边界
 
@@ -64,3 +64,15 @@ The LingBot RoboTwin adapter calls [Robbyant/lingbot-va](https://github.com/Robb
 The private `native/kinetix` runtime, small textures and bundled level definitions retain their source provenance. Kinetix is pinned to `cf7453ea103fa0b77348af1a39f689c658161613`, copyright Michael Matthews, under the [retained Kinetix MIT license](src/robotics_bench/kinetix/KINETIX_LICENSE). The private Jax2D physics implementation comes from distribution version 1.0.0 under its [retained MIT license](src/robotics_bench/kinetix/JAX2D_LICENSE).
 
 [PROVENANCE.json](src/robotics_bench/kinetix/PROVENANCE.json) lists original file hashes and migration changes. Imports use repository-private names; inactive duplicate definitions and cloud/training serialization helpers were excluded. Model checkpoints remain external resources and are not redistributed. JAX, Flax and general runtime libraries remain separately installed dependencies. This migration does not assign a license to unrelated repository code.
+
+## DynamicVLA and DOM owned execution
+
+`src/robotics_bench/models/dynamicvla/` and `src/robotics_bench/dynamicvla_dom/native/`
+contain selected source derived from [hzxie/DynamicVLA](https://github.com/hzxie/DynamicVLA),
+using the documented local revision and per-file hashes in their PROVENANCE files.
+Both retain **S-Lab License 1.0, restricted to non-commercial use**; moving code
+into this package does not relicense it or grant unrestricted commercial use.
+Derived preprocessing and the engine/client/server adapters preserve the same
+source attribution. Franka configuration additionally retains the Isaac Lab
+BSD-3-Clause notice and `native/ISAACLAB_LICENSE`. Isaac SDK, checkpoint, scenes,
+objects and tokenizer/backbone caches remain separately obtained external resources.

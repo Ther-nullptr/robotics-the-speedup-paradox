@@ -1,0 +1,47 @@
+{
+  "upstream": "https://github.com/hzxie/DynamicVLA",
+  "commit": "893654c390ad518f2e78ce135009eb33c561a3a2",
+  "license": "S-Lab License 1.0 (non-commercial)",
+  "files": [
+    {
+      "source": "policies/dynamicvla/configuration_dynamicvla.py",
+      "destination": "configuration_dynamicvla.py",
+      "upstream_sha256": "7d4e0c90de79e522e6f5f8380f7f4da43bbec510ceaca48419e0008d343396c7",
+      "local_source_sha256": "7d4e0c90de79e522e6f5f8380f7f4da43bbec510ceaca48419e0008d343396c7"
+    },
+    {
+      "source": "policies/dynamicvla/modeling_dynamicvla.py",
+      "destination": "modeling_dynamicvla.py",
+      "upstream_sha256": "0b1242b53a126ef4f8d3e59dd88a70a956467d0a2560b81d1c03c7432a435e8d",
+      "local_source_sha256": "be7fcabaf886200c7c24845cda477a3b345ffd125d26a4ecccb5830c3e0513e7"
+    },
+    {
+      "source": "policies/dynamicvla/modeling_fastvlm.py",
+      "destination": "modeling_fastvlm.py",
+      "upstream_sha256": "a7b5fa1d1addd043938d6580d1e8c8449859b3b4c94f9a3a6d7ee9a7b4203259",
+      "local_source_sha256": "03a9d0c6321beb4f2b71dd63c48f4cbb986143a4ecb39f9223ac43a572430055"
+    },
+    {
+      "source": "policies/dynamicvla/modeling_vlm_with_expert.py",
+      "destination": "modeling_vlm_with_expert.py",
+      "upstream_sha256": "e8315169202f995b479798262cc66e1c380103bba779f26e3dc43889211a2fe0",
+      "local_source_sha256": "e8315169202f995b479798262cc66e1c380103bba779f26e3dc43889211a2fe0"
+    }
+  ],
+  "additional_sources": [
+    {
+      "source": "utils/helpers.py",
+      "local_source_sha256": "176b9bd49e246bacc11baae9c1977f635eab8b346e4aae4a076e2b14d77f1d63"
+    },
+    {
+      "source": "scripts/inference.py",
+      "local_source_sha256": "31b175d9d908fbd106eee5284189a952e0db61bfc40bc3a54e55779a62af5d0a"
+    }
+  ],
+  "adaptations": [
+    "Package-local imports; offline-only config/tokenizer/checkpoint loading.",
+    "Keep local Transformers and SciPy compatibility changes; omit quantization experiments.",
+    "Add stream lifecycle/episode isolation and actual generation telemetry; preserve native indexed queue policy.",
+    "Port raw observation preprocessing and scalar-first quaternion conversion."
+  ]
+}

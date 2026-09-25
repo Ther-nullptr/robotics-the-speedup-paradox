@@ -2,7 +2,7 @@
 
 [项目首页](../README.md) · [环境配置](environment_setup.md) · [协作流程](../CONTRIBUTING.md)
 
-本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。模型主要执行路径已迁入本仓，支持独立融合开关和INT4/INT8后端；量化全量任务质量尚待验证。KINETIX动态case已有独立仓内执行路径；DOM和通用模型服务仍属于后续方向。
+本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。模型主要执行路径已迁入本仓，支持独立融合开关和INT4/INT8后端；量化全量任务质量尚待验证。KINETIX动态case已有独立仓内执行路径；DOM已有原生单环境入口；通用模型服务仍属于后续方向。
 
 [LingBot＋RoboTwin](../benchmarks/static/lingbot_robotwin/README.md) 使用独立模型worker和本机WebSocket，另有 `lingbot_runner.py` 保留执行后更新KV/VAE缓存的原生节奏。其 `paper_async` 将每个缓存关键帧k的观测移到max(0,k−n′)，推理边界t的最新可见观测为t−n′；原始预测动作条件保持原位。它不走Cosmos的无状态动作块循环。
 
@@ -17,7 +17,7 @@
 | `cosmos_robocasa` | 本仓 `CosmosEngine(suite="robocasa")` | 原生RoboCasa adapter＋共享静态runner | 可运行；固定场景同步/异步GPU验证 |
 | `lingbot_robotwin` | 外部LingBot模型worker＋本仓客户端 | RoboTwin双臂控制与sync/paper_async观测/cache更新循环 | 验证范围见case说明 |
 | KINETIX | 仓内RTC flow model | 私有KINETIX/Jax2D源码与native-blend动态runner | 两关端点对齐与8回合GPU验证 |
-| DynamicVLA＋DOM | 待接入 | 独立Isaac执行协议 | 规划中 |
+| DynamicVLA＋DOM | 仓内模型与DOM适配 | 原生non-streaming/streaming，独立Isaac进程 | 单环境入口；见case验证范围 |
 
 ## 2. 当前模块关系
 
@@ -150,3 +150,12 @@ Cosmos的LIBERO/RoboCasa路径共用整数Linear、VAE逐点融合与前缀裁�
 `robotics_bench.kinetix` 独立维护 `flow_model`、参数loader、环境、虚拟延迟、回合和统计。`native/kinetix` 与 `native/jax2d` 是带来源和许可证的私有模块，关卡及小型纹理随包发布。模型参数从外部checkpoint加载；执行源码不从另一个仓库动态导入。
 
 每周期读取当前symbolic观测，生成8步动作，按native-blend执行前4条；等待份额使用前一块的尾部。原生物理时间不受flow步数或宿主调用时间改变。共享CPU统计实现位于 `robotics_bench.statistics`，原tools路径保留兼容入口，使仓内CLI和普通安装包使用相同口径。
+
+## DynamicVLA＋DOM原生执行路径
+
+[case入口](../benchmarks/dynamic/dynamicvla_dom/README.md)启动独立模型和Isaac进程。
+`models/dynamicvla`维护模型、预处理及原生streaming队列；`dynamicvla_dom/native`
+维护DOM场景、控制和终止逻辑；client/server通过带episode和观测身份的消息交接动作。
+旧动作保持期间物理世界继续推进；首版保留0.04s物理步长，不接入paper_sync。
+生成chunk、实际应用chunk和控制步数分别记录，不能用控制步数除以块长代替模型调用数。
+移植源码的非商业许可边界见THIRD_PARTY_NOTICES.md；SDK、模型和场景资产仍是外部资源。

@@ -23,7 +23,7 @@ Infrastructure for embodied-model inference and closed-loop experiments. Bind a 
 
 The Cosmos results are individual episodes, not full-suite success rates. The π0.5 full-suite counts describe the original baseline and do not validate new optimization settings; case guides describe the evaluation setup. Quantization targets explicit module scopes and has no full-suite quality-approved preset yet. Complete policy-service speedups and paper-model control-period speedups are reported separately.
 
-LingBot prioritizes static RoboTwin tasks. KINETIX owns its JAX policy/environment/physics and supports native-blend latency replay. DynamicVLA + DOM remains planned. Static and dynamic experiments use separate case protocols; model/simulator compatibility is established per case.
+LingBot prioritizes static RoboTwin tasks. KINETIX owns its JAX policy/environment/physics and supports native-blend latency replay. DynamicVLA + DOM provides a native single-environment entry point (non-streaming/streaming; no paper_sync). Static and dynamic experiments use separate case protocols; model/simulator compatibility is established per case.
 
 ## Quick start: CPU tools
 
@@ -133,3 +133,12 @@ Work on topic branches and submit pull requests. Use bilingual commit titles and
 Track source, necessary configuration, tests, stable documentation and small synthetic examples. Keep models, datasets, videos, logs, scratch notes and generated figures local. Public CPU CI does not run GPU experiments. Server-side branch protection must be verified separately from these repository files.
 
 Background: [The Speedup Paradox](https://arxiv.org/abs/2606.28529). Model and simulator sources retain their own terms, documented in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md). The repository-owned license remains undecided; this is a pre-release project.
+
+### Native DynamicVLA + DOM
+
+The [native DOM case](benchmarks/dynamic/dynamicvla_dom/README.md) owns its model
+and simulator adapter source and runs separate model/Isaac processes. It supports
+native non-streaming and streaming with episode-safe action delivery and separate
+generated/applied chunk accounting. The initial integration excludes paper_sync
+and quantization; runtime dependencies and assets remain external. Derived
+DynamicVLA source retains S-Lab non-commercial terms.
