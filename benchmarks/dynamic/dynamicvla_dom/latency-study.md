@@ -135,3 +135,60 @@ Render a standalone figure after audited results exist:
 Matplotlib is an optional plotting dependency. The PNG/PDF distinguish effective
 service latency, actual worker compute and generating-observation age; no latency
 or accuracy point is inferred for an incomplete cell.
+
+## Dense grid with more repetitions
+
+For a finer curve, `dense_study.py` defaults to0–500ms in25ms increments plus
+600/700/800ms (24conditions),100episodes per scene/condition, split into ten
+10-seed blocks. Three scenes therefore produce7200new episodes. Model weights,
+refinement steps, native40ms physics and GPU pair remain fixed. A25ms wall-delay
+increment does not imply25ms physics or guarantee an exactly25ms change in
+observed service/action latency; report the actual measured distributions.
+
+```bash
+source .local/dynamicvla-dom.env
+python benchmarks/dynamic/dynamicvla_dom/dense_study.py \
+  --task-json /path/to/DOM/tests/scene-a.json \
+  --task-json /path/to/DOM/tests/scene-b.json \
+  --task-json /path/to/DOM/tests/scene-c.json \
+  --episodes 100 --block-episodes 10 --seed 42 \
+  --num-steps 10 --model-gpu 0 --sim-gpu 1 --plot \
+  --output-dir runs/dynamic/dynamicvla_dom/streaming-latency-dense-002
+```
+
+Use `--dry-run` for CPU-only preflight. `--delays-ms` overrides the grid. Episode
+count must divide evenly into blocks. Blockb uses seeds`42+10b`through`51+10b`;
+every task and delay receives the same seeds within each block. Each block uses
+a different reproducible shuffle of all task/delay cells, reducing dependence on
+a single long contiguous treatment interval. This counterbalancing does not
+eliminate native wall-clock jitter or make the simulator deterministic.
+
+`campaign.json` fixes the grid, seeds, weight contents and source identity.
+`state.json` records parent progress; `block-NN.log` and
+`blocks/block-NN/{state.json,analysis/report.md}` expose live block results.
+Re-running the same command resumes audited cells; it does not append duplicate
+trials or reuse the previous coarse study. An output lock prevents duplicate
+supervisors. Infrastructure errors stop the campaign and preserve attempts.
+
+The cumulative report in `analysis/report.md` includes only a **balanced prefix**
+of fully completed blocks: all tasks and all delays have the same seed coverage.
+It explicitly labels interim sample counts, for example30/300episodes per delay
+after the first block. Later incomplete blocks stay progress-only; their recorded
+episodes are not silently mixed into treatment comparisons. `--plot` writes
+PNG/PDF after each completed block with an interim/final label. Final estimates
+use300episodes per delay across three scenes and remain conditional on those
+fixed scenes; confidence intervals are descriptive, not simultaneous evidence
+that one of24delays is optimal.
+
+Independent cumulative refresh:
+
+```bash
+python benchmarks/dynamic/dynamicvla_dom/analyze_dense_study.py \
+  --campaign runs/dynamic/dynamicvla_dom/streaming-latency-dense-002/campaign.json \
+  --output-dir runs/dynamic/dynamicvla_dom/streaming-latency-dense-002/analysis
+```
+
+This is a long background job; use tmux and retain the supervisor log. Estimate
+runtime from measured block duration. Full videos, observations and request/control
+ledgers remain under each run directory; a100episode target does not reduce video
+coverage. A completed block is audited before cumulative metrics are refreshed.

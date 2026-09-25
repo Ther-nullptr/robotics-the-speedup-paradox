@@ -29,7 +29,8 @@ def main():
     pooled = [r for r in data["pooled_conditions"] if r["status"] == "completed"]
     if pooled:
         groups.append(("Pooled", pooled))
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+    dense = "included_blocks" in data
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.2 if dense else 4.8))
     colors = ["#4477AA", "#EE6677", "#228833", "#AA3377", "#66CCEE"]
     handles = []
     for index, (name, selected) in enumerate(groups):
@@ -79,14 +80,14 @@ def main():
         ax.grid(alpha=0.2)
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylim(-3, 103)
-    fig.suptitle(
-        f"Native streaming: latency and task success ({next(iter(steps))} refinement steps)",
-        y=0.99,
-    )
+    title = f"Native streaming: latency and task success ({next(iter(steps))} refinement steps)"
+    if dense:
+        title += f"\n{'Interim' if data['interim'] else 'Final'}: {data['included_blocks']}/{data['planned_blocks']} balanced blocks, {data['included_episodes']} episodes"
+    fig.suptitle(title, y=0.99, fontsize=13 if dense else None)
     fig.legend(
         handles=handles,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.91),
+        bbox_to_anchor=(0.5, 0.88 if dense else 0.91),
         ncol=len(handles),
         frameon=False,
     )
@@ -97,7 +98,9 @@ def main():
         ha="center",
         fontsize=8,
     )
-    fig.subplots_adjust(left=0.065, right=0.99, top=0.77, bottom=0.19, wspace=0.33)
+    fig.subplots_adjust(
+        left=0.065, right=0.99, top=0.73 if dense else 0.77, bottom=0.19, wspace=0.33
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "pdf"):
         fig.savefig(
