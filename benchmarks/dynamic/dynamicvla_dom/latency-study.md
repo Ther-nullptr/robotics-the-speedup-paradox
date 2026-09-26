@@ -175,7 +175,7 @@ of fully completed blocks: all tasks and all delays have the same seed coverage.
 It explicitly labels interim sample counts, for example30/300episodes per delay
 after the first block. Later incomplete blocks stay progress-only; their recorded
 episodes are not silently mixed into treatment comparisons. `--plot` writes
-PNG/PDF after each completed block with an interim/final label. Final estimates
+PNG/PDF after each completed block with an interim/final label. Optional plotting errors or120s timeouts are recorded in `state.json` without aborting model evaluation; raw-data audit failures still stop the campaign. Final estimates
 use300episodes per delay across three scenes and remain conditional on those
 fixed scenes; confidence intervals are descriptive, not simultaneous evidence
 that one of12delays is optimal.

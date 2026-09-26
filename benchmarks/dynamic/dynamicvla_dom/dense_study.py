@@ -205,6 +205,28 @@ def block_command(campaign, block, output):
     return command
 
 
+def render_progress(command, state, block_id):
+    """An optional figure must not abort otherwise valid scientific evaluation."""
+    try:
+        subprocess.run(command, check=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        state["plot_status"] = "failed"
+        state.setdefault("plot_errors", []).append(
+            {
+                "block": block_id,
+                "error": str(error),
+                "time": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        print(
+            f"WARNING: plot failed after {block_id}; evaluation continues: {error}",
+            flush=True,
+        )
+    else:
+        state["plot_status"] = "completed"
+        state["last_plotted_block"] = block_id
+
+
 def execute(campaign, output, plot=False):
     output.mkdir(parents=True, exist_ok=True)
     with (output / ".campaign.lock").open("a") as lock:
@@ -278,7 +300,7 @@ def execute(campaign, output, plot=False):
                 result = helper.analyze(descriptor)
                 helper.save(result, output / "analysis")
                 if plot:
-                    subprocess.run(
+                    render_progress(
                         [
                             campaign["identity"]["resources"]["model_python"],
                             str(Path(__file__).with_name("plot_study.py")),
@@ -287,8 +309,10 @@ def execute(campaign, output, plot=False):
                             "--output-dir",
                             str(output / "analysis"),
                         ],
-                        check=True,
+                        state,
+                        block["id"],
                     )
+                    runner.write(state_path, state)
                 print(
                     f"Completed {block['id']}: {result['included_episodes']}/{result['expected_episodes']} balanced episodes",
                     flush=True,
