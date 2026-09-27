@@ -62,6 +62,24 @@ def test_macro_and_paired_differences_use_all_tasks_and_matching_seeds():
     assert report["macro"][0]["paired_delta_vs_reference"] == -0.5
 
 
+def test_fine_aliases_share_one_cell_without_mutating_raw_records():
+    rows = trials()
+    for row in rows[::2]:
+        row["delay_mapping"] = "fine"
+    report = module().analyze(
+        rows,
+        levels=["a", "b"],
+        flows=[1, 5],
+        seeds=[0, 1],
+        bootstrap_samples=100,
+        bootstrap_seed=7,
+    )
+    assert report["complete"]
+    assert len(report["cells"]) == 4
+    assert all(row["episodes"] == 2 for row in report["cells"])
+    assert {row["delay_mapping"] for row in rows} == {"fine", "native-blend"}
+
+
 def test_duplicate_or_incomplete_coverage_is_not_silently_reported_as_complete():
     analyze = module().analyze
     settings = dict(
@@ -132,8 +150,10 @@ def test_full_ledgers_do_not_hide_a_failed_or_unfinished_run():
     assert report["macro"] == report["paired"] == []
 
 
+@pytest.mark.parametrize("mapping", ["fine", "native-blend"])
 def test_completed_manifest_requires_runtime_evidence_but_loading_can_be_partial(
     tmp_path,
+    mapping,
 ):
     import json
 
@@ -172,7 +192,7 @@ def test_completed_manifest_requires_runtime_evidence_but_loading_can_be_partial
         "repository_commit": "commit",
         "execute_horizon": 4,
         "action_noise_std": 0.1,
-        "mapping": "native-blend",
+        "mapping": mapping,
     }
     path.write_text(json.dumps(manifest))
     load = module().load_sweep

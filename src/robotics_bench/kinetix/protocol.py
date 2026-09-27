@@ -3,6 +3,18 @@
 import math
 
 
+DELAY_MODES = ("coarse", "fine")
+DELAY_ALIASES = {"legacy-round": "coarse", "native-blend": "fine"}
+
+
+def normalize_mapping(mapping):
+    """Resolve historical names without changing their recorded provenance."""
+    mode = DELAY_ALIASES.get(mapping, mapping)
+    if mode not in DELAY_MODES:
+        raise ValueError("Delay mode must be coarse or fine")
+    return mode
+
+
 LEVELS = (
     "grasp_easy",
     "catapult",
@@ -26,12 +38,12 @@ def delay_plan(
     frame_skip,
     execute_horizon,
     action_horizon=8,
-    mapping="native-blend",
+    mapping="fine",
 ):
     """Keep native solver calls fixed; only change old/new command weights.
 
-    native-blend is a time-average command approximation inside a physics slot,
-    not exact integration of a mid-slot state change. legacy-round intentionally
+    fine is a time-average command approximation inside a physics slot,
+    not exact integration of a mid-slot state change. coarse intentionally
     retains Python's nearest-even rounding to complete native control periods.
     """
     if not math.isfinite(physics_dt) or physics_dt <= 0:
@@ -45,8 +57,7 @@ def delay_plan(
             raise ValueError(f"{name} must be a positive integer")
     if execute_horizon > action_horizon:
         raise ValueError("Execution horizon exceeds the predicted action horizon")
-    if mapping not in {"native-blend", "legacy-round"}:
-        raise ValueError("Unsupported delay mapping")
+    mode = normalize_mapping(mapping)
     latency_ms = float(latency_ms)
     if not math.isfinite(latency_ms) or latency_ms < 0:
         raise ValueError("latency_ms must be finite and nonnegative")
@@ -57,9 +68,7 @@ def delay_plan(
             "Delay exceeds the execution horizon or available old-action tail"
         )
     effective = (
-        round(latency_ms / control_ms) * control_ms
-        if mapping == "legacy-round"
-        else latency_ms
+        round(latency_ms / control_ms) * control_ms if mode == "coarse" else latency_ms
     )
     slots = execute_horizon * frame_skip
     q = effective / (physics_dt * 1000)

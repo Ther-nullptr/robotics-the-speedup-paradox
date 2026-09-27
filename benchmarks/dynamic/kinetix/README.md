@@ -4,6 +4,8 @@
 
 当前入口使用JAX/Flax、symbolic观测、6维motor/thruster动作、8步预测块，默认每4条控制指令重新推理。质量轴为flow采样步数，时间轴为显式注入的虚拟延迟；它是动态任务的动作可用性重放，不使用静态case的 `paper_async`。
 
+单次运行使用本页的 `run.sh`。固定N延迟扫描、四档硬件映射、512种子配对评估和四联图分析见 [硬件延迟实验工作流](../../../docs/kinetix-latency-study.md)。新命令使用 `coarse`／`fine` 两种模式。
+
 ## 环境与资源
 
 独立运行环境要求Python 3.11。本机验证的主要组合为JAX 0.4.35、jaxlib 0.4.34、Flax 0.10.2、NumPy 1.26.4和CUDA 12 JAX插件。依赖列表见 [requirements-runtime.txt](requirements-runtime.txt)。CPU契约/统计测试不安装这套运行栈。
@@ -55,7 +57,9 @@ bash benchmarks/dynamic/kinetix/run.sh \
 
 完整回合覆盖定义为：每个指定seed从本关卡初态开始，遇到原生成功/失败接触或预算耗尽时停止，不自动reset后继续计入同一回合。运行异常、非有限状态和非法模型输出使实验失败，不计为策略失败回合。
 
-## native-blend 时间协议
+## fine：细粒度延迟
+
+`--mapping fine` 是默认模式，在原生物理步内部用指令混合表示小数延迟；`--mapping coarse` 将延迟取整到完整控制步。两者均保持下述原生物理步长。历史名称 `native-blend` 和 `legacy-round` 分别作为 fine／coarse 的兼容别名，显式使用旧名称时保留旧记录标签，已有结果无需重写。
 
 原生关卡保持 `dt=1/60 s`、`frame_skip=2`，即每条控制指令33.333 ms；默认预算256条。每4条指令刷新一次policy。flow ODE中的积分步长 `1/N` 与这些物理时间量无关。
 
@@ -79,7 +83,7 @@ L和physics_dt使用相同单位。两组动作先经过原生motor/thruster绑�
 
 ## 旧映射与硬件profile
 
-`--mapping legacy-round` 只把延迟按原生控制周期进行nearest-even取整，保持相同的零初始队列和物理参数；它用于映射敏感性对照，不是原上游RTC初始预取、RTC guidance或BID的完整复现。小于半个控制周期的延迟可能映射为0，requested/effective延迟分别记录。
+`--mapping coarse` 只把延迟按原生控制周期进行nearest-even取整，保持相同的零初始队列和物理参数；它用于映射敏感性对照，不是原上游RTC初始预取、RTC guidance或BID的完整复现。小于半个控制周期的延迟可能映射为0，requested/effective延迟分别记录。
 
 当前不提供修改dt、frame_skip或碰撞系数的参数。此前参考实验将物理步长细分到约0.417 ms，虽然保留了控制周期，却改变了约束求解次数和部分任务动力学；此类研究应在独立分支开展。
 

@@ -14,7 +14,7 @@ def run_episode(
     flow_steps,
     latency_ms,
     execute_horizon=4,
-    mapping="native-blend",
+    mapping="fine",
     max_steps=None,
     on_event=None,
     on_frame=None,

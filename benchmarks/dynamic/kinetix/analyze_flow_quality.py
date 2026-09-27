@@ -9,6 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
+from robotics_bench.kinetix.protocol import normalize_mapping  # noqa: E402
 from robotics_bench.kinetix.results import summarize  # noqa: E402
 
 
@@ -47,6 +48,10 @@ def analyze(
         raise ValueError("Matrix dimensions must be nonempty and unique")
     if bootstrap_samples < 1:
         raise ValueError("bootstrap_samples must be positive")
+    rows = [
+        {**row, "delay_mapping": normalize_mapping(row["delay_mapping"])}
+        for row in rows
+    ]
     expected = {
         (task, flow, seed) for task in levels for flow in flows for seed in seeds
     }
@@ -60,11 +65,9 @@ def analyze(
         if (
             row["requested_latency_ms"] != 0
             or row["effective_latency_ms"] != 0
-            or row["delay_mapping"] != "native-blend"
+            or row["delay_mapping"] != "fine"
         ):
-            raise ValueError(
-                "Quality-only analysis requires zero-delay native-blend trials"
-            )
+            raise ValueError("Quality-only analysis requires zero-delay fine trials")
         if (
             type(row["success"]) is not bool
             or row["max_primitive_steps"] != 256
@@ -239,7 +242,7 @@ def load_sweep(root, allow_partial):
         if (
             manifest["execute_horizon"] != 4
             or manifest["action_noise_std"] != 0.1
-            or manifest["mapping"] != "native-blend"
+            or normalize_mapping(manifest["mapping"]) != "fine"
         ):
             raise ValueError(
                 "Incompatible execution horizon, action noise or delay mapping"

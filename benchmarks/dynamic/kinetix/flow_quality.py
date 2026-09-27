@@ -48,7 +48,7 @@ def make_jobs(
             "--latencies-ms",
             "0",
             "--mapping",
-            "native-blend",
+            "fine",
             "--execute-horizon",
             "4",
             "--action-noise-std",
