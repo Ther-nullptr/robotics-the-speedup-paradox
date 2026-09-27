@@ -1,6 +1,6 @@
 # Robotics: The Speedup Paradox
 
-[中文](README.md) · [Environment setup](docs/environment_setup.en.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
+[中文](README.md) · [Environment setup](docs/environment_setup.en.md) · [Architecture](docs/architecture.md) · [Full static evaluation](docs/full-static-evaluation.md) · [Contributing](CONTRIBUTING.md)
 
 Infrastructure for embodied-model inference and closed-loop experiments. Bind a model to a compatible task and simulator, compare synchronous execution and paper-style static asynchrony, and collect consistent success-rate and control-step results.
 

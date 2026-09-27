@@ -1,5 +1,7 @@
 # Cosmos Policy＋RoboCasa 单环境实验
 
+完整同步／论文异步矩阵的手动运行、日志与恢复方法见[完整静态实验指南](../../../docs/full-static-evaluation.md)。
+
 [run.sh](run.sh) 运行一个固定任务和厨房布局，每次只推进一个环境。模型由共享 [CosmosEngine](../../../src/robotics_bench/engines/cosmos.py) 的 `suite=robocasa` 分支加载，环境由 [RoboCasa adapter](../../../src/robotics_bench/simulators/robocasa.py) 管理，同步和论文历史观测异步复用 [static_runner](../../../src/robotics_bench/protocols/static_runner.py)。
 
 策略输入是左、右外部相机及腕部相机的原始 RGB，加上9维 proprio。模型预测 H=32 个7维动作，默认执行前 n=16 个再请求下一块。默认采用 BF16；`--precision int8|int4 --quant-scope dit` 启用仓内整数推理，旧协议参数 `--quant` 保持 `none`。此入口提供动作生成，不启用 best-of-N 搜索或额外规划模型。

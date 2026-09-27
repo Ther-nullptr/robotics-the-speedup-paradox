@@ -1,6 +1,6 @@
 # Robotics: The Speedup Paradox
 
-[English](README.en.md) · [环境配置](docs/environment_setup.md) · [代码架构](docs/architecture.md) · [贡献与 PR](CONTRIBUTING.md)
+[English](README.en.md) · [环境配置](docs/environment_setup.md) · [代码架构](docs/architecture.md) · [完整静态实验](docs/full-static-evaluation.md) · [贡献与 PR](CONTRIBUTING.md)
 
 面向具身模型推理与闭环实验的基础设施：固定模型、任务和场景，比较同步执行、论文静态异步及后续轻量化方案，并统一记录成功率、控制步数和实验配置。
 

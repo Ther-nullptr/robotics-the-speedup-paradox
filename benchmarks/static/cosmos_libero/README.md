@@ -1,5 +1,7 @@
 # Cosmos-Policy＋LIBERO 静态 case
 
+完整同步／论文异步矩阵的手动运行、日志与恢复方法见[完整静态实验指南](../../../docs/full-static-evaluation.md)。
+
 [run.sh](run.sh) 调用本仓库的 [run.py](run.py)，每次只推进一个原生 LIBERO 环境。模型加载与动作推理由 [CosmosEngine](../../../src/robotics_bench/engines/cosmos.py) 负责，[LIBERO adapter](../../../src/robotics_bench/simulators/libero.py) 负责任务、初态和环境生命周期，[静态 runner](../../../src/robotics_bench/protocols/static_runner.py) 负责动作执行与历史观测选择。外部源码由调用者提供，模型和模拟器资产可复用本地文件，或通过独立的 [资源准备工具](../../../tools/RESOURCE_PREPARATION.md) 下载；这些资源不进入 Git。
 
 默认采用 BF16；`--precision int8|int4 --quant-scope dit` 启用仓内整数推理。旧协议参数 `--quant` 保持 `none`，实际模型精度由 `--precision` 选择。模型固定预测 H=16 个七维动作，`--n-action-steps` 指每块实际执行的前 n 个动作，默认 n=16，范围为 1..16。遇到成功、环境终止或步数预算时立即停止。
