@@ -28,6 +28,8 @@ source .local/kinetix.env
 
 ## 启动与矩阵评估
 
+仅研究模型迭代步数对准确率的影响，可使用仓内`flow_quality.py`：默认12关、N=1..5、每格128个配对seed、零注入延迟，保持原生仿真参数，按任务分配空闲GPU并复用编译。协议、命令和输出路径见[迭代步数实验说明](../../../docs/kinetix-flow-quality.md)。
+
 先预检，预检只读取仓内代码/关卡和checkpoint文件身份，不导入JAX、不创建实验目录：
 
 ```bash
@@ -130,7 +132,9 @@ python benchmarks/dynamic/kinetix/summarize.py --input runs/dynamic/kinetix/matr
 
 RTX 6000 Ada上完成 `car_launch` 与 `mjc_walker`、N∈{1,5}、L∈{0,21.938 ms}、seed0的8回合接入检查。car_launch四个单元均成功，控制步数分别41、43、44、46；mjc_walker分别为成功167步、失败、成功149步、成功207步。失败按256条预算进入总体统计。每单元仅一个回合，不能据此报告总体质量或最优flow步数。
 
-两关分别完成zero-delay、full-old和constant-command的逐值原生对齐；四个配置的初始观测hash各自一致。八段视频均可解码，为126×126，帧数严格等于实际控制步数加1。wheel中的关卡、纹理、许可证和独立CPU统计已检查。完整12关全量评估、目标硬件profile匹配和真正异步并发尚未验收。
+两关分别完成zero-delay、full-old和constant-command的逐值原生对齐；四个配置的初始观测hash各自一致。八段视频均可解码，为126×126，帧数严格等于实际控制步数加1。wheel中的关卡、纹理、许可证和独立CPU统计已检查。
+
+另外完成原RTC BC权重的零延迟质量矩阵：12关、N=1..5、每格128个配对seed，共7680回合；平均成功率依次为78.45%、85.74%、89.32%、89.97%、88.87%。分析/绘图入口和区间见[迭代步数实验说明](../../../docs/kinetix-flow-quality.md)。独立`benchmark_eval.py`的动作预处理JIT已扩展到12关、N=5、4个seed：9关通过逐步检查并获得约1.12～1.25×稳态评估加速，3关未通过逐位检查；grasp_easy的原始GPU路径自身也观察到逐位不重复。全任务加速比不予认证，选项仍不进入默认runner。跨任务汇总与重复性诊断分别见`analyze_eval_benchmarks.py`和`diagnose_eval_preprocess.py`。更多seed/flow步数的优化覆盖、全12关的非零时延矩阵、目标硬件profile匹配和真正异步并发仍待验证。
 
 ## English summary
 
