@@ -3,6 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -147,3 +148,57 @@ def test_baseline_accepts_audited_rename_but_rejects_changed_model(tmp_path):
     path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="flow_model"):
         study.verify_baseline(tmp_path, [task], tmp_path, episodes=2, start_seed=0)
+
+
+def test_running_job_reuse_rejects_different_checkpoint(tmp_path):
+    tools = load_study()
+    task = "catapult"
+    level = tools.SOURCE / "levels" / f"{task}.json"
+    native = json.loads(level.read_text())
+    study = {
+        "source_sha256": {"src/robotics_bench/kinetix/flow_model.py": "same"},
+        "episodes_per_cell": 512,
+        "start_seed": 0,
+        "baseline": {
+            task: {
+                "runtime_packages": {},
+                "model_config": {},
+                "checkpoint_sha256": "a" * 64,
+            }
+        },
+    }
+    job = {"id": "catapult/delay", "task": task, "mode": "fine", "phase": "calibration"}
+    manifest = {
+        "status": "running",
+        "source_sha256": {"flow_model.py": "same"},
+        "episodes_per_cell": 512,
+        "start_seed": 0,
+        "action_noise_std": 0.1,
+        "execute_horizon": 4,
+        "mapping": "fine",
+        "protocol": {"host_time_advances_simulation": False},
+        "runtime": {"packages": {}},
+        "tasks": {
+            task: {
+                "runtime": {"model_config": {}},
+                "checkpoint": "different.pkl",
+                "level_path": str(level),
+                "max_steps": 256,
+                "native_env_params": native["env_params"],
+                "native_static_env_params": native["static_env_params"],
+            }
+        },
+        "resource_sha256": {"different.pkl": "b" * 64, str(level): tools.digest(level)},
+    }
+    (tmp_path / "case-manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="checkpoint"):
+        tools.verify_job(study, job, tmp_path, allow_running=True)
+
+
+def test_runtime_executable_keeps_virtual_environment_symlink(tmp_path):
+    tools = load_study()
+    executable = tmp_path / "venv" / "bin" / "python"
+    executable.parent.mkdir(parents=True)
+    executable.symlink_to(sys.executable)
+    assert tools.interpreter_path(executable) == executable.absolute()
+    assert tools.interpreter_path(executable) != executable.resolve()

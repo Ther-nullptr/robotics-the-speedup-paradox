@@ -196,4 +196,4 @@ bash benchmarks/dynamic/kinetix/run.sh \
   --output-dir runs/dynamic/kinetix/demo-001
 ```
 
-依赖版本、profile重放、录像和统计见 [KINETIX case](../benchmarks/dynamic/kinetix/README.md)。`--dry-run` 不需要JAX；`--record-video` 保存完整回合。物理dt/frame_skip固定在原生值，较细的延迟通过native-blend表示，不通过缩小物理步长实现。
+依赖版本、profile重放、录像和统计见 [KINETIX case](../benchmarks/dynamic/kinetix/README.md)。`--dry-run` 不需要JAX；`--record-video` 保存完整回合。`--mapping fine`（默认）表示边界物理步内的指令混合；`--mapping coarse` 按控制步取整；物理dt/frame_skip均保持原生值。固定步数延迟扫描和硬件映射的配对实验、CPU拟合环境及报告命令见 [延迟实验工作流](kinetix-latency-study.md)。

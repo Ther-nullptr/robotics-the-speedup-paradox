@@ -23,7 +23,7 @@ from robotics_bench.kinetix.protocol import (  # noqa: E402
 )
 
 DEFAULT_ARCHIVE = ROOT / "docs/data/kinetix-hardware-latencies-20260811.csv"
-DEFAULT_TASKS = ("mjc_walker", "catapult", "trampoline", "catcher_v3")
+DEFAULT_TASKS = ("mjc_walker", "catapult", "trampoline", "mjc_half_cheetah")
 HARDWARE = ("local_ada", "rtx3090", "agx15", "agx30")
 SOURCE = ROOT / "src/robotics_bench/kinetix"
 # Audited naming-only migration. Other source differences prohibit data reuse.
@@ -52,6 +52,14 @@ def write_json(path, value):
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def interpreter_path(path):
+    # Resolving a venv's python symlink bypasses its pyvenv.cfg and dependencies.
+    path = Path(path).expanduser().absolute()
+    if not path.is_file():
+        raise ValueError(f"Python interpreter does not exist: {path}")
+    return path
 
 
 def read_profiles(path):
@@ -419,9 +427,11 @@ def job_command(study, job, directory, *, python, gpu, output):
     return command + ["--latencies-ms", ",".join(map(repr, latencies))]
 
 
-def verify_job(study, job, output):
+def verify_job(study, job, output, *, allow_running=False):
     manifest = json.loads((output / "case-manifest.json").read_text())
-    if manifest["status"] != "completed":
+    if manifest["status"] != "completed" and not (
+        allow_running and manifest["status"] == "running"
+    ):
         raise ValueError(f"Incomplete job: {job['id']}")
     expected_sources = {
         key.removeprefix("src/robotics_bench/kinetix/"): value
@@ -448,11 +458,29 @@ def verify_job(study, job, output):
     ):
         raise ValueError("Runtime package versions differ from the zero-delay baseline")
     task = job["task"]
+    task_metadata = manifest["tasks"][task]
+    resources = manifest["resource_sha256"]
+    if (
+        resources[task_metadata["checkpoint"]]
+        != study["baseline"][task]["checkpoint_sha256"]
+    ):
+        raise ValueError("Executed checkpoint differs from the study baseline")
+    level_path = SOURCE / "levels" / f"{task}.json"
+    native = json.loads(level_path.read_text())
+    if (
+        resources[task_metadata["level_path"]] != digest(level_path)
+        or task_metadata["native_env_params"] != native["env_params"]
+        or task_metadata["native_static_env_params"] != native["static_env_params"]
+        or task_metadata["max_steps"] != 256
+    ):
+        raise ValueError("Executed native task configuration differs from the study")
     if (
         manifest["tasks"][task]["runtime"]["model_config"]
         != study["baseline"][task]["model_config"]
     ):
         raise ValueError("Runtime model configuration differs from baseline")
+    if manifest["status"] == "running":
+        return {"status": "running"}
     rows = read_jsonl(output / "episodes.jsonl")
     if job["phase"] == "verification":
         check_coverage(rows, range(1, 6), start_seed=study["start_seed"], episodes=2)
@@ -537,6 +565,7 @@ def run_phase(args):
     directory = args.study_dir.expanduser().resolve()
     study = json.loads((directory / "study.json").read_text())
     verify_inputs(study)
+    args.python = interpreter_path(args.python)
     gpus = [int(value) for value in args.gpus.split(",")]
     if (
         not gpus
@@ -576,6 +605,35 @@ def run_phase(args):
         if args.phase == "verification"
         else [job for job in study["jobs"] if job["phase"] == args.phase]
     )
+    if args.reuse_study:
+        reuse_directory = args.reuse_study.expanduser().resolve()
+        previous_status = json.loads((reuse_directory / "status.json").read_text())
+        for job in jobs:
+            if job["id"] in status["jobs"]:
+                continue
+            previous_job = previous_status["jobs"].get(job["id"], {})
+            if previous_job.get("status") not in {"completed", "running"}:
+                continue
+            output = Path(previous_job["output"])
+            verified = verify_job(study, job, output, allow_running=True)
+            borrowed = {
+                **previous_job,
+                "reused_from_study": str(reuse_directory),
+                "source_reference_only": True,
+            }
+            if verified.get("status") == "running":
+                process = Path(f"/proc/{previous_job['pid']}/cmdline")
+                if (
+                    not process.is_file()
+                    or str(output).encode() not in process.read_bytes()
+                ):
+                    raise ValueError(
+                        "Incomplete external job has no matching live process"
+                    )
+                borrowed["status"] = "external_running"
+            else:
+                borrowed.update(status="completed", verification=verified)
+            status["jobs"][job["id"]] = borrowed
     pending = []
     for job in jobs:
         record = status["jobs"].get(job["id"], {})
@@ -590,6 +648,8 @@ def run_phase(args):
             if record.get("verification") and verified != record["verification"]:
                 raise ValueError("Completed job artifact changed")
             record.update(status="completed", verification=verified)
+        elif record.get("status") == "external_running":
+            continue
         else:
             pending.append(job)
     status.update(controller_pid=os.getpid(), phase=args.phase, updated_at=utc_now())
@@ -605,11 +665,16 @@ def run_phase(args):
             with mutex:
                 if not pending:
                     return
-                job = pending.pop(0)
             while not gpu_is_empty(gpu):
+                with mutex:
+                    if not pending:
+                        return
                 if stopped.wait(10):
                     return
             with mutex:
+                if not pending:
+                    return
+                job = pending.pop(0)
                 record = status["jobs"].get(job["id"], {})
                 attempt = int(record.get("attempt", 0)) + 1
                 output = directory / "executions" / job["id"] / f"attempt-{attempt:03d}"
@@ -674,6 +739,41 @@ def run_phase(args):
                 with mutex:
                     write_json(status_path, status)
                 raise
+    # Explicit references may still be finishing in another controller. Do not
+    # relaunch them or treat their partial rows as completed evaluation data.
+    while any(
+        status["jobs"].get(job["id"], {}).get("status") == "external_running"
+        for job in jobs
+    ):
+        for job in jobs:
+            record = status["jobs"].get(job["id"], {})
+            if record.get("status") != "external_running":
+                continue
+            output = Path(record["output"])
+            try:
+                verified = verify_job(study, job, output, allow_running=True)
+                if verified.get("status") != "running":
+                    record.update(
+                        status="completed", verification=verified, finished_at=utc_now()
+                    )
+                else:
+                    process = Path(f"/proc/{record['pid']}/cmdline")
+                    if (
+                        not process.is_file()
+                        or str(output).encode() not in process.read_bytes()
+                    ):
+                        raise ValueError(
+                            "External job stopped before completing its manifest"
+                        )
+            except Exception as exc:
+                record.update(status="failed", error=f"{type(exc).__name__}: {exc}")
+        status["updated_at"] = utc_now()
+        write_json(status_path, status)
+        if any(
+            status["jobs"].get(job["id"], {}).get("status") == "external_running"
+            for job in jobs
+        ):
+            threading.Event().wait(10)
     complete = all(
         status["jobs"].get(job["id"], {}).get("status") == "completed" for job in jobs
     )
@@ -712,6 +812,50 @@ def show_status(args):
     )
 
 
+def finish_study(args):
+    """Complete verification, calibration, freezing, validation and reporting."""
+    directory = args.study_dir.expanduser().resolve()
+    analysis_python = interpreter_path(args.analysis_python)
+    analyzer = Path(__file__).with_name("analyze_latency_study.py")
+    for phase in ("verification", "calibration"):
+        args.phase = phase
+        run_phase(args)
+    frozen = directory / "calibration/frozen-model.json"
+    if not frozen.exists():
+        subprocess.run(
+            [
+                str(analysis_python),
+                str(analyzer),
+                "freeze",
+                "--study-dir",
+                str(directory),
+            ],
+            check=True,
+        )
+    args.phase = "validation"
+    run_phase(args)
+    subprocess.run(
+        [
+            str(analysis_python),
+            str(analyzer),
+            "report",
+            "--study-dir",
+            str(directory),
+            "--plots",
+        ],
+        check=True,
+    )
+    write_json(
+        directory / "completion.json",
+        {
+            "status": "complete",
+            "completed_at": utc_now(),
+            "report": "analysis/report.md",
+            "study_sha256": digest(directory / "study.json"),
+        },
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -743,7 +887,23 @@ def main():
         help="Explicit physical GPU indices; no automatic expansion",
     )
     run.add_argument("--cpus-per-worker", type=int, default=16)
+    run.add_argument(
+        "--reuse-study",
+        type=Path,
+        help="Explicitly reuse matching completed or active jobs from another study",
+    )
     run.set_defaults(handler=run_phase)
+    finish = commands.add_parser(
+        "finish",
+        help="Run or resume the complete study, including frozen prediction and plots",
+    )
+    finish.add_argument("--study-dir", type=Path, required=True)
+    finish.add_argument("--python", type=Path, required=True)
+    finish.add_argument("--analysis-python", type=Path, required=True)
+    finish.add_argument("--gpus", required=True)
+    finish.add_argument("--cpus-per-worker", type=int, default=16)
+    finish.add_argument("--reuse-study", type=Path)
+    finish.set_defaults(handler=finish_study)
     status = commands.add_parser(
         "status", help="Report progress without importing the model runtime"
     )

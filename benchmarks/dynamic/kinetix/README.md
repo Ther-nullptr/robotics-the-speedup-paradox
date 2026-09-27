@@ -4,6 +4,8 @@
 
 当前入口使用JAX/Flax、symbolic观测、6维motor/thruster动作、8步预测块，默认每4条控制指令重新推理。质量轴为flow采样步数，时间轴为显式注入的虚拟延迟；它是动态任务的动作可用性重放，不使用静态case的 `paper_async`。
 
+单次运行使用本页的 `run.sh`。固定N延迟扫描、四档硬件映射、512种子配对评估和四联图分析见 [硬件延迟实验工作流](../../../docs/kinetix-latency-study.md)。新命令使用 `coarse`／`fine` 两种模式。
+
 ## 环境与资源
 
 独立运行环境要求Python 3.11。本机验证的主要组合为JAX 0.4.35、jaxlib 0.4.34、Flax 0.10.2、NumPy 1.26.4和CUDA 12 JAX插件。依赖列表见 [requirements-runtime.txt](requirements-runtime.txt)。CPU契约/统计测试不安装这套运行栈。
