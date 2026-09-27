@@ -1,6 +1,7 @@
 """Coverage and provenance boundaries for hardware-delay studies."""
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -69,3 +70,80 @@ def test_profile_rejects_excluded_or_ambiguous_hardware(tmp_path):
     path.write_text(original.replace("agx30", "agx50"))
     with pytest.raises(ValueError, match="profile|hardware"):
         study.read_profiles(path)
+
+
+def test_baseline_accepts_audited_rename_but_rejects_changed_model(tmp_path):
+    study = load_study()
+    task = "catcher_v3"
+    directory = tmp_path / task
+    directory.mkdir()
+    checkpoint = tmp_path / f"worlds_l_{task}.pkl"
+    checkpoint.write_bytes(b"test checkpoint identity")
+    level = study.SOURCE / "levels" / f"{task}.json"
+    native = json.loads(level.read_text())
+    hashes = {
+        str(p.relative_to(study.SOURCE)): study.digest(p)
+        for p in study.SOURCE.rglob("*.py")
+    }
+    for name, (old, _) in study.NAMING_MIGRATION.items():
+        hashes[name] = old
+    manifest = {
+        "status": "completed",
+        "episodes_per_cell": 2,
+        "start_seed": 0,
+        "execute_horizon": 4,
+        "action_noise_std": 0.1,
+        "mapping": "native-blend",
+        "source_sha256": hashes,
+        "resource_sha256": {
+            str(checkpoint): study.digest(checkpoint),
+            str(level): study.digest(level),
+        },
+        "tasks": {
+            task: {
+                "native_env_params": native["env_params"],
+                "native_static_env_params": native["static_env_params"],
+                "max_steps": 256,
+                "checkpoint": str(checkpoint),
+                "level_path": str(level),
+                "runtime": {"model_config": {"dtype": "float32"}},
+            }
+        },
+        "runtime": {"packages": {}},
+        "protocol": {
+            "host_time_advances_simulation": False,
+            "initial_policy_prefetches": 0,
+            "initial_previous_action": "zeros",
+            "physics_refinement": False,
+            "blend_domain": "processed_actuator_command",
+        },
+    }
+    rows = [
+        {
+            "task": task,
+            "flow_steps": n,
+            "env_seed": seed,
+            "requested_latency_ms": 0,
+            "effective_latency_ms": 0,
+            "delay_mapping": "native-blend",
+            "success": True,
+            "max_primitive_steps": 256,
+            "primitive_steps": 1,
+            "physics_steps": 2,
+        }
+        for n in range(1, 6)
+        for seed in range(2)
+    ]
+    path = directory / "case-manifest.json"
+    path.write_text(json.dumps(manifest))
+    (directory / "episodes.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows)
+    )
+    evidence = study.verify_baseline(
+        tmp_path, [task], tmp_path, episodes=2, start_seed=0
+    )
+    assert evidence[task]["checkpoint_sha256"] == study.digest(checkpoint)
+    manifest["source_sha256"]["flow_model.py"] = "0" * 64
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="flow_model"):
+        study.verify_baseline(tmp_path, [task], tmp_path, episodes=2, start_seed=0)

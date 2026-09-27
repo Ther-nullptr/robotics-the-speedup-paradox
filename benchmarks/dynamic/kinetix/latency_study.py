@@ -30,7 +30,7 @@ SOURCE = ROOT / "src/robotics_bench/kinetix"
 NAMING_MIGRATION = {
     "protocol.py": (
         "70f176c6c2817ff570fc0c72465f4887214fee2d9b0ab9922682be1040184ed8",
-        "dfdeb00afdec9ca955bfe4617839a6aacb1a2b1b69cb4a74dcdda16c91df8e7d",
+        "548c9a71002d373b7ffe2641b9f718cfa5b2c32e5736f94fe9228df4ac5585ca",
     ),
     "runner.py": (
         "9b48f5258eded711aba77e1d2633c4c68bd2b1204034c1d9a2af3202ef2d4c59",
