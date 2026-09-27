@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -60,6 +61,22 @@ def parser():
     p.add_argument(
         "--streaming", action="store_true", help="Enable native DynamicVLA streaming"
     )
+    p.add_argument(
+        "--measure-inference",
+        action="store_true",
+        help="Synchronize and measure streaming model generations",
+    )
+    p.add_argument(
+        "--extra-delay-ms",
+        type=float,
+        default=0,
+        help="Additional worker service wall delay after CPU-ready actions",
+    )
+    p.add_argument(
+        "--episode-seed-mode",
+        action="store_true",
+        help="Pair model RNG seeds with seed + episode_id",
+    )
     p.add_argument("--model-gpu", default="0")
     p.add_argument("--sim-gpu", default="1")
     p.add_argument("--img-port", type=int, default=3186)
@@ -82,6 +99,12 @@ def parser():
 
 
 def build_plan(args):
+    if not math.isfinite(args.extra_delay_ms) or args.extra_delay_ms < 0:
+        raise ValueError("extra-delay-ms must be finite and nonnegative")
+    if (
+        args.measure_inference or args.extra_delay_ms or args.episode_seed_mode
+    ) and not args.streaming:
+        raise ValueError("Latency-study options require streaming")
     paths = {}
     for key in (
         "model_python",
@@ -165,6 +188,8 @@ def build_plan(args):
         "--headless",
         "--enable_cameras",
     ]
+    if args.measure_inference:
+        server.append("--allow-policy-starvation")
     if args.record_video:
         server.append("--record-video")
     client = [
@@ -187,6 +212,11 @@ def build_plan(args):
     ]
     if args.streaming:
         client.append("--streaming")
+    if args.measure_inference:
+        client.append("--measure-inference")
+    if args.episode_seed_mode:
+        client.append("--episode-seed-mode")
+    client.extend(["--extra-delay-ms", str(args.extra_delay_ms)])
     if args.num_steps is not None:
         client.extend(["--num-steps", str(args.num_steps)])
     source = Path(__file__).resolve().parents[2]
@@ -198,6 +228,9 @@ def build_plan(args):
         "PYTHONUNBUFFERED": "1",
     }
     options = dict(
+        measure_inference=args.measure_inference,
+        extra_delay_ms=args.extra_delay_ms,
+        episode_seed_mode=args.episode_seed_mode,
         mode="native-streaming" if args.streaming else "native-non-streaming",
         episodes=args.episodes,
         seed=args.seed,
@@ -289,6 +322,8 @@ def summarize(output, expected_episodes):
         seen.add(key)
         generated[event["episode_id"]] += 1
     for row in episodes:
+        if generated[row["episode_id"]] == 0:
+            raise ValueError("Episode has no completed model generation evidence")
         if "applied_chunk_ids" in row:
             ids = row["applied_chunk_ids"]
             if len(set(ids)) != len(ids) or row["applied_chunks"] != len(ids):

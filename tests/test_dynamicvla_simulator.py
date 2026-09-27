@@ -4,6 +4,7 @@ import importlib
 import sys
 
 import numpy as np
+import pytest
 
 from robotics_bench.dynamicvla_dom.server import (
     select_action,
@@ -195,3 +196,28 @@ def test_native_dropping_is_failure_not_exhausted_time_budget():
     assert termination_reason(False, ["time_out"]) == "timeout"
     assert termination_reason(False, ["object_dropping", "time_out"]) == "timeout"
     assert termination_reason(True, ["object_picked", "time_out"]) == "success"
+
+
+def test_action_age_uses_generation_observation_not_selection_index():
+    from robotics_bench.dynamicvla_dom.server import action_age
+
+    age = action_age(
+        {"chunk_observation_sim_time_s": 0.4, "chunk_observation_wall_s": 10.0},
+        1.0,
+        10.8,
+    )
+    assert age["action_age_sim_ms"] == pytest.approx(600)
+    assert age["action_age_wall_ms"] == pytest.approx(800)
+    assert action_age({}, 1.0, 10.8)["action_age_sim_ms"] is None
+    with pytest.raises(ValueError, match="observation time"):
+        action_age({"chunk_observation_sim_time_s": 2.0}, 1.0, 10.8)
+
+
+def test_generation_progress_cannot_cross_episodes_or_fake_actions():
+    from robotics_bench.dynamicvla_dom.server import valid_model_progress
+
+    message = {"kind": "model_progress", "episode_id": 2, "chunk_id": 1}
+    assert valid_model_progress(message, 2)
+    assert not valid_model_progress(message, 1)
+    assert not valid_model_progress({**message, "chunk_id": -1}, 2)
+    assert not valid_model_progress({"episode_id": 2, "action": [0] * 8}, 2)

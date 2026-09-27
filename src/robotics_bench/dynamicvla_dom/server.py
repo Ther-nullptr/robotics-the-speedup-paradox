@@ -56,12 +56,48 @@ def select_action(
         selected = action
         metadata = {
             key: message[key]
-            for key in ("chunk_id", "action_index", "action_index_in_chunk")
+            for key in (
+                "chunk_id",
+                "action_index",
+                "action_index_in_chunk",
+                "chunk_observation_index",
+                "chunk_observation_sim_time_s",
+                "chunk_observation_wall_s",
+            )
             if key in message
         }
         previous_index = index
     result = (selected, previous_index, rejected)
     return (*result, metadata) if with_metadata else result
+
+
+def valid_model_progress(message, episode_id):
+    return (
+        isinstance(message, dict)
+        and message.get("kind") == "model_progress"
+        and type(message.get("episode_id")) is int
+        and message["episode_id"] == episode_id
+        and type(message.get("chunk_id")) is int
+        and message["chunk_id"] >= 0
+    )
+
+
+def action_age(metadata, sim_time_s, wall_time_s):
+    """Age of the generating observation, not the latest action-selection image."""
+    result = {}
+    for domain, current in (("sim", sim_time_s), ("wall", wall_time_s)):
+        source = (
+            metadata.get(f"chunk_observation_{domain}_time_s")
+            if domain == "sim"
+            else metadata.get("chunk_observation_wall_s")
+        )
+        if source is None:
+            result[f"action_age_{domain}_ms"] = None
+        elif not math.isfinite(source) or source > current + 1e-6:
+            raise ValueError("Invalid chunk observation time")
+        else:
+            result[f"action_age_{domain}_ms"] = (current - source) * 1000
+    return result
 
 
 def dependency_versions():
@@ -134,7 +170,15 @@ def wait_for_ack(obs_socket, act_socket, terminal, timeout, app):
 
 
 def run_episode(
-    env, obs_socket, act_socket, app, episode_id, instruction, seed, record
+    env,
+    obs_socket,
+    act_socket,
+    app,
+    episode_id,
+    instruction,
+    seed,
+    record,
+    allow_policy_starvation=False,
 ):
     import torch
     from robotics_bench.dynamicvla_dom.native import simulation
@@ -162,6 +206,7 @@ def run_episode(
     step_time = None
     started = time.perf_counter()
     trace = []
+    progress_chunks = set()
     while app.is_running():
         tick = time.perf_counter()
         cameras = simulation.get_camera_views(native.scene.sensors, ["rgb"])
@@ -192,8 +237,17 @@ def run_episode(
             **{f"observation.images.{k}": v["rgb"] for k, v in cameras.items()},
         }
         obs_socket.send_pyobj(observation)
+        messages = _drain(act_socket)
+        for message in messages:
+            if valid_model_progress(message, episode_id):
+                progress_chunks.add(message["chunk_id"])
+        action_messages = [
+            message
+            for message in messages
+            if not valid_model_progress(message, episode_id)
+        ]
         action, previous_index, invalid, metadata = select_action(
-            _drain(act_socket), episode_id, steps, previous_index, with_metadata=True
+            action_messages, episode_id, steps, previous_index, with_metadata=True
         )
         rejected += invalid
         if action is None:
@@ -202,15 +256,18 @@ def run_episode(
             last_action = torch.from_numpy(action).to(native.device)
             last_metadata = metadata
             accepted += 1
+        control_wall_s = time.perf_counter()
+        age = action_age(last_metadata, steps * step_dt, control_wall_s)
         trace.append(
             {
                 "control_index": steps,
                 "sim_time_s": steps * step_dt,
-                "wall_time_s": time.perf_counter(),
+                "wall_time_s": control_wall_s,
                 "held": action is None,
                 "observation_index": previous_index if previous_index >= 0 else None,
                 "action": last_action.cpu().numpy().tolist(),
                 **last_metadata,
+                **age,
             }
         )
         env.step(last_action)
@@ -225,7 +282,10 @@ def run_episode(
             time.sleep(step_dt - step_time)
         success = bool(term_manager.get_term(done_term).all())
         if success or bool(term_manager.dones.all()):
-            if accepted == 0:
+            # Study mode defers no-action validity to the terminal ACK and the
+            # supervisor's completed-generation ledger check. A scene may end
+            # before a slow result is released; that is not a disconnected model.
+            if accepted == 0 and not allow_policy_starvation:
                 raise RuntimeError(
                     "Episode terminated without receiving a model action; not a policy failure"
                 )
@@ -246,6 +306,8 @@ def run_episode(
                     "termination_reason": reason,
                     "termination_terms": termination_terms,
                     "actions_accepted": accepted,
+                    "policy_starved": accepted == 0,
+                    "generation_progress_chunks": len(progress_chunks),
                     "applied_chunk_ids": applied_chunk_ids,
                     "applied_chunks": len(applied_chunk_ids),
                     "held_control_steps": held,
@@ -355,6 +417,7 @@ def run(args, app):
                 instruction,
                 seed,
                 args.record_video,
+                args.allow_policy_starvation,
             )
             result["task"] = Path(args.env_cfg).stem
             result["video_path"] = None
@@ -433,6 +496,11 @@ def parser():
     result.add_argument("--tolerance", type=float, default=0.07)
     result.add_argument("--disable-fabric", action="store_true")
     result.add_argument("--path-tracing", action="store_true")
+    result.add_argument(
+        "--allow-policy-starvation",
+        action="store_true",
+        help="Study mode: defer no-action validity to completed generation evidence at episode ACK",
+    )
     result.add_argument("--record-video", action="store_true")
     result.add_argument("--connection-timeout", type=float, default=600)
     result.add_argument("--ack-timeout", type=float, default=120)

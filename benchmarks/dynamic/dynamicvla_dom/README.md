@@ -7,7 +7,7 @@ The runtime does not import a DynamicVLA or dynamic-experiments source checkout.
 
 The first integration supports `native-non-streaming` (default) and
 `native-streaming` (`--streaming`). It does not implement `paper_sync`, static
-`paper_async`, latency injection, Kinetix command blending, timestep subdivision
+`paper_async`, Kinetix command blending, timestep subdivision
 or quantization. Native non-streaming still runs beside a continuously evolving
 simulator: while the model generates a new chunk, DOM retains its previous control
 target. Native streaming generates in a worker, skips expired predicted actions
@@ -143,3 +143,7 @@ The validated local simulator uses Python 3.10.15, Isaac Lab distribution versio
 0.45.9 and Torch 2.7.0+cu128 with the installed Isaac Sim4.5 runtime. This differs
 from the upstream recommended environment; `effective-config.json` records the
 actually detected versions, leaving unavailable distribution metadata null.
+
+Optional [streaming latency studies](latency-study.md) isolate synthetic service
+latency from model compute, with paired episode seeds and audited outcome/age
+statistics. All study switches remain off in the native launcher by default.

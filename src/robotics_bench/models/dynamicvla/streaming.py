@@ -24,6 +24,11 @@ def worker(checkpoint, config, mailbox, results, events, stop):
             .eval()
             .to(config.device)
         )
+        parameter_dtypes = (
+            sorted({str(parameter.dtype) for parameter in policy.parameters()})
+            if getattr(config, "measure_inference", False)
+            else None
+        )
         dummy = {
             key: torch.zeros(1, config.n_obs_steps, *feat.shape, device=config.device)
             for key, feat in config.input_features.items()
@@ -39,6 +44,7 @@ def worker(checkpoint, config, mailbox, results, events, stop):
             if requested_epoch is not None:
                 policy.reset()
                 epoch = requested_epoch
+                seed_episode(config, epoch)
                 events.put({"kind": "reset_ack", "episode_id": epoch})
             latest = mailbox.pop("obs", None)
             if latest is None:
@@ -48,6 +54,20 @@ def worker(checkpoint, config, mailbox, results, events, stop):
             if epoch != batch["_episode_id"]:
                 policy.reset()
                 epoch = batch["_episode_id"]
+                seed_episode(config, epoch)
+            measure = getattr(config, "measure_inference", False)
+            if measure:
+                events.put(
+                    {
+                        "kind": "chunk_started",
+                        "episode_id": epoch,
+                        "chunk_id": policy._generated_chunks,
+                        "observation_index": batch["index"],
+                    }
+                )
+            if measure and str(config.device).startswith("cuda"):
+                torch.cuda.synchronize(config.device)
+            service_started = time.perf_counter()
             batch = {
                 key: value.to(config.device)
                 if isinstance(value, torch.Tensor)
@@ -63,13 +83,40 @@ def worker(checkpoint, config, mailbox, results, events, stop):
                     dim = actions.shape[-1] - 1
                     actions[..., :dim] += state[..., :dim]
                 actions = actions.transpose(0, 1).cpu()
+            compute_ready = time.perf_counter()
             event = policy.generation_events.pop()
-            event.update(episode_id=epoch, result_ready_wall_s=time.perf_counter())
+            event.update(
+                episode_id=epoch,
+                model_parameter_dtypes=parameter_dtypes,
+                worker_started_wall_s=service_started,
+                compute_ready_wall_s=compute_ready,
+                worker_compute_ms=(
+                    (compute_ready - service_started) * 1000 - event["native_pacing_ms"]
+                    if measure
+                    else None
+                ),
+            )
+            requested_delay = getattr(config, "extra_delay_ms", 0.0)
+            delay_started = time.perf_counter()
+            if requested_delay:
+                time.sleep(requested_delay / 1000)
+            released = time.perf_counter()
+            event.update(
+                extra_delay_requested_ms=requested_delay,
+                extra_delay_actual_ms=(released - delay_started) * 1000,
+                delay_started_wall_s=delay_started,
+                post_compute_overhead_ms=(delay_started - compute_ready) * 1000,
+                released_wall_s=released,
+                result_ready_wall_s=released,
+            )
             result = {
                 "actions": actions,
                 "index": index,
                 "episode_id": epoch,
                 "chunk_id": event["chunk_id"],
+                "chunk_observation_index": event["chunk_observation_index"],
+                "chunk_observation_sim_time_s": event["chunk_observation_sim_time_s"],
+                "chunk_observation_wall_s": event["chunk_observation_wall_s"],
             }
             try:
                 results.put_nowait(result)
@@ -178,3 +225,11 @@ def reset_episode(policy, episode_id):
             return collected
         collected.append(event)
     raise TimeoutError("DynamicVLA reset barrier exceeded 600 seconds")
+
+
+def seed_episode(config, episode_id):
+    """Optional per-episode RNG; ordinary native runs retain a continuous stream."""
+    if getattr(config, "episode_seed_mode", False):
+        import torch
+
+        torch.manual_seed(config.runtime_seed + episode_id)
