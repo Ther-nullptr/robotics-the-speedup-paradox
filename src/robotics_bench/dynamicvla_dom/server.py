@@ -336,7 +336,11 @@ def run(args, app):
     from robotics_bench.dynamicvla_dom.native import simulation
 
     output = Path(args.output_dir)
-    config = json.loads(Path(args.env_cfg).read_text())
+    from robotics_bench.dynamicvla_dom.object_motion import scale_object_speed
+
+    config, object_motion = scale_object_speed(
+        json.loads(Path(args.env_cfg).read_text()), args.object_speed_scale
+    )
     if not config["scene"]["robot"]["spawn"]["usd_path"].endswith(
         "panda_instanceable.usd"
     ):
@@ -395,6 +399,8 @@ def run(args, app):
                 "control_protocol": "native_hold_last",
                 "video_fps": 24,
                 "input_config": config,
+                "object_speed_scale": args.object_speed_scale,
+                "object_motion": object_motion,
                 "dependency_versions": dependency_versions(),
             },
         )
@@ -408,6 +414,22 @@ def run(args, app):
                 config["instruction"]
             )
             env.reset(seed=seed)
+            target = env.unwrapped.scene["object"]
+            reset_motion = {
+                **object_motion,
+                "default_lin_vel_mps": target.data.default_root_state[0, 7:10]
+                .detach()
+                .cpu()
+                .tolist(),
+                "reset_lin_vel_mps": target.data.root_lin_vel_w[0]
+                .detach()
+                .cpu()
+                .tolist(),
+                "reset_ang_vel_rad_s": target.data.root_ang_vel_w[0]
+                .detach()
+                .cpu()
+                .tolist(),
+            }
             result, frames, trace = run_episode(
                 env,
                 obs_socket,
@@ -420,6 +442,8 @@ def run(args, app):
                 args.allow_policy_starvation,
             )
             result["task"] = Path(args.env_cfg).stem
+            result["object_speed_scale"] = args.object_speed_scale
+            result["object_motion"] = reset_motion
             result["video_path"] = None
             name = f"episode-{episode_id:06d}"
             if frames:
@@ -485,6 +509,7 @@ def parser():
     result.add_argument(
         "--franka-usd", default=os.getenv("ROBOTICS_DYNAMICVLA_FRANKA_USD")
     )
+    result.add_argument("--object-speed-scale", type=float, default=1.0)
     result.add_argument("--seed", type=int, default=0)
     result.add_argument("--episodes", type=int, default=1)
     result.add_argument("--host", default="127.0.0.1")

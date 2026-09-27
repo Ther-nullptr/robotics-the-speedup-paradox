@@ -14,6 +14,7 @@ import sys
 import time
 
 from robotics_bench.statistics import summarize_episodes
+from robotics_bench.dynamicvla_dom.object_motion import scale_object_speed
 
 
 def read(path):
@@ -76,6 +77,12 @@ def parser():
         "--episode-seed-mode",
         action="store_true",
         help="Pair model RNG seeds with seed + episode_id",
+    )
+    p.add_argument(
+        "--object-speed-scale",
+        type=float,
+        default=1.0,
+        help="Scale target object initial linear velocity; 1.25 is125% of dataset speed",
     )
     p.add_argument("--model-gpu", default="0")
     p.add_argument("--sim-gpu", default="1")
@@ -147,7 +154,9 @@ def build_plan(args):
         )
     if args.streaming and config.get("chunk_size") != config.get("n_action_steps"):
         raise ValueError("Native streaming requires chunk_size == n_action_steps")
-    read(paths["env_cfg"])
+    _, object_motion = scale_object_speed(
+        read(paths["env_cfg"]), args.object_speed_scale
+    )
     output = args.output_dir.expanduser().absolute()
     if output.exists():
         raise ValueError(
@@ -179,6 +188,8 @@ def build_plan(args):
         paths["env_cfg"],
         "--franka-usd",
         paths["franka_usd"],
+        "--object-speed-scale",
+        str(args.object_speed_scale),
         "--seed",
         str(args.seed),
         "--episodes",
@@ -228,6 +239,7 @@ def build_plan(args):
         "PYTHONUNBUFFERED": "1",
     }
     options = dict(
+        object_speed_scale=args.object_speed_scale,
         measure_inference=args.measure_inference,
         extra_delay_ms=args.extra_delay_ms,
         episode_seed_mode=args.episode_seed_mode,
@@ -250,6 +262,7 @@ def build_plan(args):
         status="planned",
         options=options,
         resources=paths,
+        object_motion=object_motion,
         output_dir=str(output),
         commands=dict(server=server, client=client),
         environments=dict(

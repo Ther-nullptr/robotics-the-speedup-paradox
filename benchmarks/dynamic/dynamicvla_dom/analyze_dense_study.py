@@ -47,6 +47,10 @@ def declared_identity(campaign):
         raise ValueError("Dense campaign requires a complete declared identity")
     if not identity["resources"] or not identity["tasks"]:
         raise ValueError("Campaign identity requires resources and task hashes")
+    if campaign.get("object_speed_scale", 1.0) != identity.get(
+        "object_speed_scale", 1.0
+    ):
+        raise ValueError("Campaign object speed scale differs from declared identity")
     if identity["num_steps"] != campaign["num_steps"]:
         raise ValueError("Campaign num_steps differs from declared identity")
     tasks = {}
@@ -64,6 +68,12 @@ def declared_identity(campaign):
 
 def bind_completed_record(row, identity, tasks, sources):
     observed = row["comparison_identity"]
+    if observed.get("object_speed_scale", 1.0) != identity.get(
+        "object_speed_scale", 1.0
+    ):
+        raise ValueError(
+            "Completed cell object speed differs from declared campaign identity"
+        )
     for key in ("checkpoint_sha256", "checkpoint_config_sha256"):
         if observed[key] != identity[key]:
             raise ValueError(
@@ -295,6 +305,7 @@ def analyze(campaign_path):
     return {
         "format": "dynamicvla-dense-study-results-v1",
         "id": campaign["id"],
+        "object_speed_scale": identity.get("object_speed_scale", 1.0),
         "study": str(campaign_path),
         "status": "partial" if interim else "completed",
         "interim": interim,

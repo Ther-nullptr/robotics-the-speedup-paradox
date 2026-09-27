@@ -103,6 +103,8 @@ def main():
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylim(-3, 103)
     title = f"Native streaming: latency and task success ({next(iter(steps))} refinement steps)"
+    if "object_speed_scale" in data:
+        title += f"; object speed {data['object_speed_scale']:g}x"
     if dense:
         title += f"\n{'Interim' if data['interim'] else 'Final'}: {data['included_blocks']}/{data['planned_blocks']} balanced blocks, {data['included_episodes']} episodes"
     fig.suptitle(title, y=0.99, fontsize=13 if dense else None)
