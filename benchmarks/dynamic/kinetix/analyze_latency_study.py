@@ -292,6 +292,44 @@ def write_csv(path, rows):
         )
 
 
+def build_plot_data(study, models):
+    """Freeze every plotted prediction, including non-integer visualization points."""
+    import numpy as np
+
+    flow = np.linspace(1, 5, 801)
+    data = {}
+    for task, model in models.items():
+        data[task] = {
+            "flow_steps": flow.tolist(),
+            "quality_success": predict_success(model, "fine", flow, 0).tolist(),
+            "modes": {},
+        }
+        for mode in ("fine", "coarse"):
+            delays = np.linspace(0, max(model["delay_models"][mode]["delays_ms"]), 801)
+            curves = {
+                "requested_delays_ms": delays.tolist(),
+                "delay_success": predict_success(model, mode, 5, delays).tolist(),
+                "hardware_success": {},
+            }
+            for hardware, values in study["hardware_profiles"].items():
+                latency = np.interp(
+                    flow, range(1, 6), [values[str(n)] for n in range(1, 6)]
+                )
+                curves["hardware_success"][hardware] = predict_success(
+                    model, mode, flow, latency
+                ).tolist()
+            data[task]["modes"][mode] = curves
+    return data
+
+
+def frozen_plot_data(frozen, task):
+    if task not in frozen.get("plot_data", {}):
+        raise ValueError(
+            "Frozen plot data is missing; do not recompute predictions after validation"
+        )
+    return frozen["plot_data"][task]
+
+
 def freeze(args):
     directory = args.study_dir.expanduser().resolve()
     output = directory / "calibration"
@@ -335,6 +373,7 @@ def freeze(args):
         },
         "calibration_sources": evidence,
         "task_models": models,
+        "plot_data": build_plot_data(study, models),
         "predictions": predictions,
         "prediction_scope": "Condition holdout with shared paired seeds; no claim of seed or scene generalization.",
         "calibration_method": "Empirical zero-delay quality with PCHIP interpolation; binomial Hill/no-effect fine delay; effective-bin lookup for coarse delay.",
@@ -514,7 +553,6 @@ def make_plots(output, study, frozen, cells):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
-    from scipy.interpolate import PchipInterpolator
 
     colors = {
         "local_ada": "#0072B2",
@@ -528,7 +566,6 @@ def make_plots(output, study, frozen, cells):
         "agx15": "AGX Orin 15W",
         "agx30": "AGX Orin 30W",
     }
-    fine_grid = np.linspace(1, 5, 801)
 
     def observations(axis, x, selected, color, label=None, hollow=False):
         mean = np.array([row["success_rate"] for row in selected])
@@ -559,6 +596,8 @@ def make_plots(output, study, frozen, cells):
     ):
         for task in study["tasks"]:
             model = frozen["task_models"][task]
+            plot_data = frozen_plot_data(frozen, task)
+            fine_grid = plot_data["flow_steps"]
             quality = sorted(
                 (
                     row
@@ -597,10 +636,7 @@ def make_plots(output, study, frozen, cells):
                 )
                 quality_ax.plot(
                     fine_grid,
-                    100
-                    * PchipInterpolator(
-                        model["quality_steps"], model["quality_probabilities"]
-                    )(fine_grid),
+                    100 * np.asarray(plot_data["quality_success"]),
                     color="#333333",
                     label="Quality interpolation",
                 )
@@ -629,12 +665,11 @@ def make_plots(output, study, frozen, cells):
                     "#333333",
                     "Calibration observations",
                 )
-                delays = np.linspace(
-                    0, max(row["requested_latency_ms"] for row in calibration), 801
-                )
+                curves = plot_data["modes"][mode]
+                delays = curves["requested_delays_ms"]
                 delay_ax.plot(
                     delays,
-                    100 * predict_success(model, mode, 5, delays),
+                    100 * np.asarray(curves["delay_success"]),
                     color="#882255",
                     label=model["delay_models"][mode]["kind"],
                 )
@@ -646,12 +681,9 @@ def make_plots(output, study, frozen, cells):
                 )
                 delay_ax.legend(fontsize=8)
                 for hardware, values in study["hardware_profiles"].items():
-                    latency = np.interp(
-                        fine_grid, range(1, 6), [values[str(n)] for n in range(1, 6)]
-                    )
                     mapped_ax.plot(
                         fine_grid,
-                        100 * predict_success(model, mode, fine_grid, latency),
+                        100 * np.asarray(curves["hardware_success"][hardware]),
                         color=colors[hardware],
                         label=names[hardware],
                     )

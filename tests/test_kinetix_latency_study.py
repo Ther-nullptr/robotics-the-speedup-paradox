@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import subprocess
 
 import pytest
 
@@ -73,7 +74,9 @@ def test_profile_rejects_excluded_or_ambiguous_hardware(tmp_path):
         study.read_profiles(path)
 
 
-def test_baseline_accepts_audited_rename_but_rejects_changed_model(tmp_path):
+def test_baseline_accepts_audited_rename_but_rejects_changed_model(
+    tmp_path, monkeypatch
+):
     study = load_study()
     task = "catcher_v3"
     directory = tmp_path / task
@@ -144,6 +147,17 @@ def test_baseline_accepts_audited_rename_but_rejects_changed_model(tmp_path):
         tmp_path, [task], tmp_path, episodes=2, start_seed=0
     )
     assert evidence[task]["checkpoint_sha256"] == study.digest(checkpoint)
+    copied_source = tmp_path / "owned_source"
+    copied_level = copied_source / "levels" / f"{task}.json"
+    copied_level.parent.mkdir(parents=True)
+    copied_level.write_bytes(level.read_bytes())
+    with monkeypatch.context() as context:
+        context.setattr(study, "SOURCE", copied_source)
+        plan = {"source_sha256": {}, "baseline": evidence, "policy_dir": str(tmp_path)}
+        study.verify_inputs(plan)
+        copied_level.write_text(copied_level.read_text() + "\n")
+        with pytest.raises(ValueError, match="level"):
+            study.verify_inputs(plan)
     manifest["source_sha256"]["flow_model.py"] = "0" * 64
     path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="flow_model"):
@@ -202,3 +216,45 @@ def test_runtime_executable_keeps_virtual_environment_symlink(tmp_path):
     executable.symlink_to(sys.executable)
     assert tools.interpreter_path(executable) == executable.absolute()
     assert tools.interpreter_path(executable) != executable.resolve()
+
+
+def test_resume_attaches_matching_live_local_worker(tmp_path):
+    tools = load_study()
+    output = str(tmp_path / "attempt-001")
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('ready', flush=True); sys.stdin.read()",
+            output,
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert process.stdout.readline().strip() == "ready"
+        record = {"status": "running", "pid": process.pid, "output": output}
+        assert tools.attach_live_worker(record)
+        assert record["status"] == "external_running"
+        assert not tools.worker_is_alive(
+            {**record, "output": str(tmp_path / "attempt")}
+        )
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+def test_imported_completion_must_match_original_certificate():
+    tools = load_study()
+    original = {
+        "episodes": 512,
+        "manifest_sha256": "manifest",
+        "episodes_sha256": "original",
+    }
+    record = {"status": "completed", "verification": original}
+    tools.verify_completion_evidence(record, dict(original))
+    with pytest.raises(ValueError, match="changed"):
+        tools.verify_completion_evidence(
+            record, {**original, "episodes_sha256": "changed"}
+        )

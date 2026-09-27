@@ -280,6 +280,9 @@ def verify_baseline(directory, tasks, policy_dir, *, episodes, start_seed):
             "episodes": str(ledger_path),
             "episodes_sha256": digest(ledger_path),
             "checkpoint_sha256": digest(checkpoint),
+            "level_sha256": resources[task_meta["level_path"]],
+            "native_env_params": task_meta["native_env_params"],
+            "native_static_env_params": task_meta["native_static_env_params"],
             "runtime_packages": manifest["runtime"]["packages"],
             "model_config": task_meta["runtime"]["model_config"],
         }
@@ -364,6 +367,27 @@ def create_study(args):
     )
 
 
+def frozen_level(study, task):
+    evidence = study["baseline"][task]
+    if "level_sha256" in evidence:
+        return {
+            key: evidence[key]
+            for key in ("level_sha256", "native_env_params", "native_static_env_params")
+        }
+    # Early v1 plans already pin this manifest; recover its original level
+    # identity without rewriting an in-flight study or trusting current files.
+    path = Path(evidence["manifest"])
+    if digest(path) != evidence["manifest_sha256"]:
+        raise ValueError("Baseline manifest changed")
+    manifest = json.loads(path.read_text())
+    declared = manifest["tasks"][task]
+    return {
+        "level_sha256": manifest["resource_sha256"][declared["level_path"]],
+        "native_env_params": declared["native_env_params"],
+        "native_static_env_params": declared["native_static_env_params"],
+    }
+
+
 def verify_inputs(study):
     for relative, expected in study["source_sha256"].items():
         if digest(ROOT / relative) != expected:
@@ -377,6 +401,11 @@ def verify_inputs(study):
             != evidence["checkpoint_sha256"]
         ):
             raise ValueError(f"Checkpoint changed: {task}")
+        if (
+            digest(SOURCE / "levels" / f"{task}.json")
+            != frozen_level(study, task)["level_sha256"]
+        ):
+            raise ValueError(f"Native level changed: {task}")
 
 
 def job_command(study, job, directory, *, python, gpu, output):
@@ -465,12 +494,12 @@ def verify_job(study, job, output, *, allow_running=False):
         != study["baseline"][task]["checkpoint_sha256"]
     ):
         raise ValueError("Executed checkpoint differs from the study baseline")
-    level_path = SOURCE / "levels" / f"{task}.json"
-    native = json.loads(level_path.read_text())
+    native = frozen_level(study, task)
     if (
-        resources[task_metadata["level_path"]] != digest(level_path)
-        or task_metadata["native_env_params"] != native["env_params"]
-        or task_metadata["native_static_env_params"] != native["static_env_params"]
+        resources[task_metadata["level_path"]] != native["level_sha256"]
+        or task_metadata["native_env_params"] != native["native_env_params"]
+        or task_metadata["native_static_env_params"]
+        != native["native_static_env_params"]
         or task_metadata["max_steps"] != 256
     ):
         raise ValueError("Executed native task configuration differs from the study")
@@ -559,6 +588,48 @@ def gpu_is_empty(gpu):
     return not processes and float(status[0]) <= 5 and float(status[1]) <= 500
 
 
+def worker_is_alive(record):
+    if not record.get("pid") or not record.get("output"):
+        return False
+    try:
+        arguments = Path(f"/proc/{record['pid']}/cmdline").read_bytes().split(b"\0")
+    except (FileNotFoundError, ProcessLookupError):
+        return False
+    return str(record["output"]).encode() in arguments
+
+
+def attach_live_worker(record):
+    if record.get("status") in {"running", "external_running"} and worker_is_alive(
+        record
+    ):
+        record.update(status="external_running", attached_existing_worker=True)
+        return True
+    return False
+
+
+def verify_completion_evidence(record, verified):
+    original = record.get("verification")
+    if record.get("status") == "completed" and not original:
+        raise ValueError("Completed job lacks its original verification evidence")
+    if original and verified != original:
+        raise ValueError("Completed job artifacts changed after original verification")
+
+
+def recover_completed_job(study, job, record):
+    path = Path(record["output"]) / "case-manifest.json" if record else None
+    complete = (
+        path
+        and path.exists()
+        and json.loads(path.read_text()).get("status") == "completed"
+    )
+    if record.get("status") != "completed" and not complete:
+        return False
+    verified = verify_job(study, job, Path(record["output"]))
+    verify_completion_evidence(record, verified)
+    record.update(status="completed", verification=verified)
+    return True
+
+
 def run_phase(args):
     import fcntl
 
@@ -622,33 +693,20 @@ def run_phase(args):
                 "source_reference_only": True,
             }
             if verified.get("status") == "running":
-                process = Path(f"/proc/{previous_job['pid']}/cmdline")
-                if (
-                    not process.is_file()
-                    or str(output).encode() not in process.read_bytes()
-                ):
+                if not worker_is_alive(previous_job):
                     raise ValueError(
                         "Incomplete external job has no matching live process"
                     )
                 borrowed["status"] = "external_running"
             else:
+                verify_completion_evidence(previous_job, verified)
+                borrowed["original_verification"] = previous_job.get("verification")
                 borrowed.update(status="completed", verification=verified)
             status["jobs"][job["id"]] = borrowed
     pending = []
     for job in jobs:
         record = status["jobs"].get(job["id"], {})
-        artifact = Path(record["output"]) / "case-manifest.json" if record else None
-        completed_artifact = (
-            artifact
-            and artifact.exists()
-            and json.loads(artifact.read_text()).get("status") == "completed"
-        )
-        if record.get("status") == "completed" or completed_artifact:
-            verified = verify_job(study, job, Path(record["output"]))
-            if record.get("verification") and verified != record["verification"]:
-                raise ValueError("Completed job artifact changed")
-            record.update(status="completed", verification=verified)
-        elif record.get("status") == "external_running":
+        if recover_completed_job(study, job, record) or attach_live_worker(record):
             continue
         else:
             pending.append(job)
@@ -676,6 +734,12 @@ def run_phase(args):
                     return
                 job = pending.pop(0)
                 record = status["jobs"].get(job["id"], {})
+                if recover_completed_job(study, job, record) or attach_live_worker(
+                    record
+                ):
+                    status["updated_at"] = utc_now()
+                    write_json(status_path, status)
+                    continue
                 attempt = int(record.get("attempt", 0)) + 1
                 output = directory / "executions" / job["id"] / f"attempt-{attempt:03d}"
                 output.parent.mkdir(parents=True, exist_ok=True)
@@ -753,15 +817,12 @@ def run_phase(args):
             try:
                 verified = verify_job(study, job, output, allow_running=True)
                 if verified.get("status") != "running":
+                    verify_completion_evidence(record, verified)
                     record.update(
                         status="completed", verification=verified, finished_at=utc_now()
                     )
                 else:
-                    process = Path(f"/proc/{record['pid']}/cmdline")
-                    if (
-                        not process.is_file()
-                        or str(output).encode() not in process.read_bytes()
-                    ):
+                    if not worker_is_alive(record):
                         raise ValueError(
                             "External job stopped before completing its manifest"
                         )

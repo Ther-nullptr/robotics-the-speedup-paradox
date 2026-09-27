@@ -102,3 +102,22 @@ def test_validation_rmse_does_not_count_reused_calibration_cells():
     assert metrics["heldout_rmse"] == pytest.approx((0.1**2 / 2 + 0.05**2 / 2) ** 0.5)
     assert metrics["observed_best_integers"] == [2, 3]
     assert metrics["predicted_best_integer"] == 1
+
+
+def test_plot_predictions_are_frozen_before_analysis_code_changes(monkeypatch):
+    analysis = load_analysis()
+    study = {
+        "hardware_profiles": {"local_ada": {str(n): float(n) for n in range(1, 6)}}
+    }
+    models = {"task": analysis.fit_task_model(calibration())}
+    snapshot = analysis.build_plot_data(study, models)
+    expected = snapshot["task"]["modes"]["fine"]["hardware_success"]["local_ada"][:]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Frozen plot data must not be recomputed")
+
+    monkeypatch.setattr(analysis, "predict_success", forbidden)
+    stored = analysis.frozen_plot_data({"plot_data": snapshot}, "task")
+    assert stored["modes"]["fine"]["hardware_success"]["local_ada"] == expected
+    with pytest.raises(ValueError, match="Frozen plot"):
+        analysis.frozen_plot_data({}, "task")
