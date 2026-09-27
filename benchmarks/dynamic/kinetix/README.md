@@ -92,6 +92,8 @@ flow_steps,latency_ms
 
 以上仅展示文件格式，不能作为本机性能证据。调用时使用 `--flow-steps 1,3,5 --latency-profile profile.csv`，不再传 `--latencies-ms`。manifest保存文件哈希，并标记为外部profile场景；不会认证目标硬件、dtype或后端是否与本次JAX/float32 policy等价。参考仓库中的Torch/FP16、低精度算子profile不得直接解释为当前JAX路径的实测时延。
 
+历史硬件数据见 [2026-08-11 延迟档案](../../../docs/kinetix-hardware-latencies.md) 和[完整精度 CSV](../../../docs/data/kinetix-hardware-latencies-20260811.csv)，保留 RTX 6000 Ada、RTX 3090、AGX Orin 15W／30W 四档、各 N=1～5。该批次使用同架构随机初始化权重、PyTorch eager FP16。用于本入口时，先筛选单个 `profile_id` 并导出 `flow_steps,latency_ms` 两列，再传给 `--latency-profile`；不要直接传入含四档硬件的完整档案。
+
 ## 输出与统计
 
 | 文件 | 内容 |

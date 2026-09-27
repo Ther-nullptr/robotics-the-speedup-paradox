@@ -15,7 +15,9 @@
 | native-delay协议说明与后期 `protocol.json` | 固定原生物理网格，按执行器指令进行分数槽混合；区分硬件profile与模拟时间 | 经用户确认，在本仓重建native-blend，保留近似边界说明 |
 | 后期quality–latency拟合报告 | 分开拟合零延迟质量、固定质量下的延迟响应、硬件完整action-generation时延 | 本次产物保留这些分析需要的独立实验轴；暂不迁入历史拟合结果或自动寻找最优点 |
 
-后期native-blend的协议和结果存在，但在本次检查的本地可执行脚本中没有找到相应实现，因此本仓实现以已记录协议为依据，不能宣称是原代码的逐行移植或完整历史结果复现。
+后续来源复核已在参考项目的 `kinetix-native-delay-clock` Git 工作区找到后期native-blend实现，位于 `run_torch_task_accuracy_eval.py`；初次检查的主检出目录未包含这部分代码。本仓实现仍以已记录协议独立重建，运行使用仓内源码，不能宣称是原代码的逐行移植或完整历史结果复现。
+
+同一工作区保留的四档历史硬件推理延迟已整理为 [2026-08-11 延迟档案](kinetix-hardware-latencies.md)，包含 N=1～5 的完整精度数据、进程重复与计时边界。它们是同架构随机初始化权重的 PyTorch eager FP16 profile，不能直接当作当前 JAX checkpoint 的实测。
 
 ## 两类时间不能混淆
 
