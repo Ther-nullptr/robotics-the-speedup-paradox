@@ -33,3 +33,6 @@ pythonpath = ["src"]
 "robotics_bench.models.cosmos" = ["PROVENANCE.json"]
 "robotics_bench.kinetix" = ["PROVENANCE.json", "*_LICENSE", "levels/*.json"]
 "robotics_bench.kinetix.native.kinetix" = ["assets/*.png"]
+
+"robotics_bench.models.dynamicvla" = ["LICENSE", "PROVENANCE.json"]
+"robotics_bench.dynamicvla_dom.native" = ["LICENSE", "ISAACLAB_LICENSE", "PROVENANCE.json"]

@@ -5,7 +5,7 @@
 | Case | 当前状态 | 执行路径 |
 | --- | --- | --- |
 | [KINETIX](kinetix/README.md) | 已有仓内源码和可执行入口 | RTC JAX flow policy＋KINETIX/Jax2D；native-blend延迟、flow步数/延迟配对矩阵、完整视频与统计 |
-| DynamicVLA＋DOM | 规划中 | 独立Isaac后端、原生时延与动作交接协议，后续接入 |
+| [DynamicVLA＋DOM](dynamicvla_dom/README.md) | 原生单环境入口 | 仓内模型/DOM源码、独立Isaac环境、原生non-streaming/streaming；不含paper_sync |
 
 KINETIX的实际模型、环境、物理核心和关卡代码位于 `src/robotics_bench/kinetix/`，没有外部源码运行依赖。框架环境和checkpoint路径通过case模板配置。DOM不会因KINETIX接入自动获得支持，也不与静态π0.5/Cosmos权重构成任意组合。
 

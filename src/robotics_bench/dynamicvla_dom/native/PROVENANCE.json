@@ -1,0 +1,76 @@
+{
+  "repository": "https://github.com/hzxie/DynamicVLA",
+  "revision": "893654c390ad518f2e78ce135009eb33c561a3a2",
+  "source_status": "Local working tree; evaluate.py and robots/franka.py contained compatibility modifications",
+  "license": "S-Lab License 1.0; robots/franka.py retains Isaac Lab BSD-3-Clause notice (ISAACLAB_LICENSE)",
+  "changes": [
+    "Namespaced imports and evaluation-only extraction",
+    "Franka-only adapter with explicit offline USD binding",
+    "Effective physics timestep writes sim.dt (upstream assigned unused env_cfg.dt)",
+    "No training, state machine, stall-pose or paper synchronization code",
+    "Single-environment Franka source subset; unused generation helpers removed",
+    "Preserve native 24fps MP4 playback metadata (simulation control remains25Hz)"
+  ],
+  "files": [
+    {
+      "source": "simulations/configs/env_cfg.py",
+      "sha256": "b7b7f458a962f84e6c4a500b059a8c527383714573e9e4ef922795c6e1b14e21",
+      "destination": "configs/env_cfg.py"
+    },
+    {
+      "source": "simulations/configs/event_cfg.py",
+      "sha256": "8dbe13fcadb51ddd7586ba010570ad28ee45670da6d13620a46f613d2a5ff422",
+      "destination": "configs/event_cfg.py"
+    },
+    {
+      "source": "simulations/configs/scene_cfg.py",
+      "sha256": "daa3bb26cf0e6d4400f8c84cdc2f08365396cd6d8d37d0a319833b6e58cf188f",
+      "destination": "configs/scene_cfg.py"
+    },
+    {
+      "source": "simulations/configs/object_cfg.py",
+      "sha256": "32fd9f109a816b9e56f505b1c5a35991fe30fc87f03c0889a1d9cd08c6935748",
+      "destination": "configs/object_cfg.py"
+    },
+    {
+      "source": "simulations/configs/robot_cfg.py",
+      "sha256": "cf68af038d99547dac1def57b73c5179542ffaa142e3b1c27100a7efb2615850",
+      "destination": "configs/robot_cfg.py"
+    },
+    {
+      "source": "simulations/configs/termination_cfg.py",
+      "sha256": "6182b86d5f04ce5f4fb70a123ac7e1b692f7394851c6f989e01327890c577a63",
+      "destination": "configs/termination_cfg.py"
+    },
+    {
+      "source": "simulations/helpers.py",
+      "sha256": "b511912c7d1127f6dd526255659557b04eaa9437489cc1591fc6cd9accaf9b25",
+      "destination": "helpers.py"
+    },
+    {
+      "source": "simulations/camera_io.py",
+      "sha256": "8b1c89b8346fbfeb5e9844c98d4e914ae06950dd5868b5db0749d435b32ba2bc",
+      "destination": "camera_io.py"
+    },
+    {
+      "source": "simulations/robots/franka.py",
+      "sha256": "c4727f4359c9fa09b2c773865abb8d6d2f6cd0b607088566a6b7853f7247e301",
+      "destination": "robots/franka.py"
+    },
+    {
+      "source": "utils/instruction_generator.py",
+      "sha256": "f2fe13b5161e428a2ae28f5bbe934a06a93df6a8977dce7e8dfd74359f61ec03",
+      "destination": "instruction_generator.py"
+    },
+    {
+      "source": "simulations/evaluate.py",
+      "sha256": "dde1157c1c2fddf6386def95e90c3465f743e1e6f591e658b00bce38f823f1c5",
+      "extraction": "evaluation helpers only"
+    },
+    {
+      "source": "simulations/simulate.py",
+      "sha256": "8043920cc291c3a30325a317da8616716a529bd1fbf2399892f7010a97d55579",
+      "extraction": "evaluation helpers only"
+    }
+  ]
+}
