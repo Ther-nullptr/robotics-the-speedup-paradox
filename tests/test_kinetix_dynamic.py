@@ -6,6 +6,24 @@ import numpy as np
 import pytest
 
 
+@pytest.mark.parametrize(
+    ("name", "alias", "effective"),
+    [("fine", "native-blend", 20.0), ("coarse", "legacy-round", 100 / 3)],
+)
+def test_readable_delay_modes_preserve_alias_physics(name, alias, effective):
+    from robotics_bench.kinetix.protocol import delay_plan, normalize_mapping
+
+    arguments = dict(physics_dt=1 / 60, frame_skip=2, execute_horizon=4)
+    current = delay_plan(20, mapping=name, **arguments)
+    historical = delay_plan(20, mapping=alias, **arguments)
+    assert normalize_mapping(alias) == name
+    assert current["mapping"] == name
+    assert historical["mapping"] == alias
+    assert current["effective_latency_ms"] == pytest.approx(effective)
+    assert current["old_weights"] == historical["old_weights"]
+    assert current["physics_steps_per_cycle"] == 8
+
+
 @pytest.mark.parametrize("latency", [0.0, 0.417, 7.465, 21.938, 36.738, 400 / 3])
 def test_native_blend_preserves_fractional_delay_and_native_solver_count(latency):
     from robotics_bench.kinetix.protocol import delay_plan

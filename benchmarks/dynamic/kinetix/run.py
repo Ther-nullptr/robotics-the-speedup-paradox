@@ -17,7 +17,12 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
-from robotics_bench.kinetix.protocol import LEVELS, delay_plan  # noqa: E402
+from robotics_bench.kinetix.protocol import (  # noqa: E402
+    DELAY_ALIASES,
+    DELAY_MODES,
+    LEVELS,
+    delay_plan,
+)
 
 
 def digest(path):
@@ -65,7 +70,14 @@ def parser():
         help="CSV with flow_steps,latency_ms; a declared replay scenario",
     )
     result.add_argument(
-        "--mapping", choices=("native-blend", "legacy-round"), default="native-blend"
+        "--mapping",
+        choices=(*DELAY_MODES, *DELAY_ALIASES),
+        metavar="{coarse,fine}",
+        default="fine",
+        help=(
+            "coarse: round latency to control steps; fine: blend commands within "
+            "native physics steps (default). Historical aliases remain accepted."
+        ),
     )
     result.add_argument("--execute-horizon", type=int, default=4)
     result.add_argument(
