@@ -75,3 +75,5 @@ LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。
 `benchmarks/dynamic/kinetix` 是可运行入口，实际flow model、KINETIX环境和Jax2D源码在 `src/robotics_bench/kinetix/` 维护；不得重新导入参考仓库或已安装的顶层kinetix/jax2d包。外部只绑定checkpoint与Python框架环境。默认fine（原名native-blend），原生dt/frame_skip/solver/碰撞参数固定；按processed actuator command混合，控制噪声对新旧候选同源，无初始prefetch，旧队列保留预测尾部。coarse（原名legacy-round）只改变延迟映射，不能修改物理网格。zero/full-old/constant控制保留原生编译边界并通过逐值对齐；缩小物理时间片的研究在独立分支，不改主线默认参数。每个质量/延迟单元按相同seed列表评估，异常不计为策略失败；统计复用安装包内 `robotics_bench.statistics`，失败按预算惩罚。视频只补齐编码边缘，不改变模拟器。
 
 历史硬件推理延迟统一查阅 [KINETIX 硬件延迟档案](docs/kinetix-hardware-latencies.md) 及其 CSV。按用户约定仅维护 `local_ada`、`rtx3090`、`agx15`、`agx30` 四档；AGX Orin 50W 不纳入该档案、后续汇总或默认延迟映射。档案是历史 PyTorch eager FP16、同架构随机初始化权重的完整同步调用计时，不得作为当前已训练 JAX FP32 policy 的实测，也不得据此直接归因量化收益。查询已有数据先读档案，不自动启动新压测。
+
+硬件延迟研究使用 [配对实验工作流](docs/kinetix-latency-study.md)。主任务按既有零延迟扫描的总体上升趋势选择：catapult、trampoline、mjc_half_cheetah、mjc_walker；允许高步数段小幅回落，不强制单调，也不为重现某种曲线选择任务。每单元512个配对seed。校准后冻结预测，再运行映射验证；复用数据的来源须显式记录，校准重叠点不计为留出验证。动态延迟仍由虚拟时钟注入，不重新启动缩小物理时间片的研究。
