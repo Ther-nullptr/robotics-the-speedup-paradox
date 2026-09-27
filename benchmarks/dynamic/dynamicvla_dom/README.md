@@ -147,3 +147,32 @@ actually detected versions, leaving unavailable distribution metadata null.
 Optional [streaming latency studies](latency-study.md) isolate synthetic service
 latency from model compute, with paired episode seeds and audited outcome/age
 statistics. All study switches remain off in the native launcher by default.
+
+## Target object speed
+
+`--object-speed-scale` is a finite nonnegative multiplier of the task target's
+**initial linear velocity** (`scene.object.init_state.lin_vel`). Default1.0 keeps
+the dataset setting;1.25 means125%, matching the DOM-CR speed conditions in
+[The Speedup Paradox, AppendixB.2 and Figure4](https://arxiv.org/abs/2606.28529).
+The [upstream evaluator](https://github.com/hzxie/DynamicVLA/blob/master/simulations/evaluate.py)
+passes this field to the native rigid object's initial state. The reference
+experiment's `scale_env_object_speed()` applies the same vector scaling.
+
+```bash
+bash benchmarks/dynamic/dynamicvla_dom/run.sh \
+  --streaming --object-speed-scale 1.25 --episodes 1 \
+  --model-gpu 0 --sim-gpu 1 \
+  --output-dir runs/dynamic/dynamicvla_dom/speed-125
+```
+
+The multiplier preserves direction and leaves angular velocity, other objects,
+robot controls, camera timing, physics dt and video FPS unchanged.0sets only the
+initial linear velocity to zero; gravity, rotation, contact and task perturbations
+remain active. The simulator does not enforce a constant velocity during rollout.
+The input taskJSON is never overwritten or cumulatively rescaled between resets.
+
+`case-manifest.json` and `effective-config.json` record source/configured vectors
+and norms in m/s. Each episode additionally records the native default and actual
+post-reset target velocities. Both `study.py` and `dense_study.py` accept the same
+flag and bind it into their resume identity. Run different speed settings in
+separate output directories; the analyzers reject mixed-speed latency curves.

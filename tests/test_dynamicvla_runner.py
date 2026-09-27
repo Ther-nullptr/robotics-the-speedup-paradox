@@ -27,7 +27,13 @@ def options(tmp_path):
     for name in ("scenes", "objects"):
         (tmp_path / name).mkdir()
     (tmp_path / "scene.json").write_text(
-        json.dumps({"seed": 42, "episode_length_s": 20})
+        json.dumps(
+            {
+                "seed": 42,
+                "episode_length_s": 20,
+                "scene": {"object": {"init_state": {"lin_vel": [0.2, 0.1, 0.0]}}},
+            }
+        )
     )
     (tmp_path / "panda.usd").write_text("fixture")
     return parser().parse_args(
@@ -270,3 +276,15 @@ def test_no_action_episode_needs_actual_completed_generation(tmp_path):
         json.dumps(dict(kind="chunk_generated", episode_id=0, chunk_id=0)) + "\n"
     )
     assert summarize(tmp_path, expected_episodes=1)["success_rate"] == 0
+
+
+def test_object_speed_option_changes_only_simulator_and_records_velocity(options):
+    original = Path(options.env_cfg).read_bytes()
+    options.object_speed_scale = 1.25
+    plan = build_plan(options)
+    server = plan["commands"]["server"]
+    assert server[server.index("--object-speed-scale") + 1] == "1.25"
+    assert "--object-speed-scale" not in plan["commands"]["client"]
+    assert plan["options"]["object_speed_scale"] == 1.25
+    assert plan["object_motion"]["configured_lin_vel_mps"] == [0.25, 0.125, 0]
+    assert Path(options.env_cfg).read_bytes() == original

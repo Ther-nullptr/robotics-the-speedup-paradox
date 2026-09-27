@@ -284,3 +284,49 @@ def test_delay_boundary_or_overhead_corruption_fails(tmp_path, field):
     jsonl(path, rows)
     with pytest.raises(ValueError):
         analyze(study(tmp_path, [cell], tasks=["pick"]))
+
+
+def test_speed_mismatch_is_not_pooled_into_latency_curve(tmp_path):
+    cell = make_run(tmp_path, "pick", 0)
+    p = tmp_path / cell["run_dir"] / "case-manifest.json"
+    manifest = json.loads(p.read_text())
+    manifest["options"]["object_speed_scale"] = 1.25
+    write(p, manifest)
+    with pytest.raises(ValueError, match="object speed scale"):
+        analyze(study(tmp_path, [cell], tasks=["pick"]))
+
+
+def test_configured_speed_must_reach_native_default_velocity(tmp_path):
+    from robotics_bench.dynamicvla_dom.object_motion import scale_object_speed
+
+    cell = make_run(tmp_path, "pick", 0)
+    cell["object_speed_scale"] = 1.25
+    run = tmp_path / cell["run_dir"]
+    config, motion = scale_object_speed(
+        {"scene": {"object": {"init_state": {"lin_vel": [0.2, 0.0, 0.0]}}}}, 1.25
+    )
+    manifest = json.loads((run / "case-manifest.json").read_text())
+    manifest["options"]["object_speed_scale"] = 1.25
+    manifest["object_motion"] = motion
+    write(run / "case-manifest.json", manifest)
+    effective = json.loads((run / "effective-config.json").read_text())
+    effective.update(object_speed_scale=1.25, object_motion=motion, input_config=config)
+    write(run / "effective-config.json", effective)
+    rows = [
+        json.loads(line) for line in (run / "episodes.jsonl").read_text().splitlines()
+    ]
+    for row in rows:
+        row.update(
+            object_speed_scale=1.25,
+            object_motion={**motion, "default_lin_vel_mps": [0.25, 0.0, 0.0]},
+        )
+    jsonl(run / "episodes.jsonl", rows)
+    path = study(tmp_path, [cell], tasks=["pick"])
+    descriptor = json.loads(path.read_text())
+    descriptor["identity"] = {"object_speed_scale": 1.25}
+    write(path, descriptor)
+    assert analyze(path)["pooled_conditions"][0]["metrics"]["success_rate"] == 0.5
+    rows[0]["object_motion"]["default_lin_vel_mps"] = [0.2, 0.0, 0.0]
+    jsonl(run / "episodes.jsonl", rows)
+    with pytest.raises(ValueError, match="Native default object velocity"):
+        analyze(path)

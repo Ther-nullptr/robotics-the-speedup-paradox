@@ -10,6 +10,8 @@ import math
 from pathlib import Path
 from statistics import mean
 
+from robotics_bench.dynamicvla_dom.object_motion import scale_object_speed
+
 
 FORMAT = "dynamicvla-streaming-study-v1"
 TIMINGS = (
@@ -98,6 +100,10 @@ def audit_cell(cell, study_path):
         result["error"] = manifest.get("error")
         return result, None
     options = manifest["options"]
+    speed_scale = nonnegative(cell.get("object_speed_scale", 1.0), "object speed scale")
+    if options.get("object_speed_scale", 1.0) != speed_scale:
+        raise ValueError("Manifest object speed scale differs from study cell")
+    result["object_speed_scale"] = speed_scale
     for key in ("extra_delay_ms", "num_steps", "episodes", "seed"):
         if options.get(key) != cell[key]:
             raise ValueError(f"{cell['id']}: manifest {key} differs from study")
@@ -118,8 +124,56 @@ def audit_cell(cell, study_path):
     if not manifest.get("checkpoint_sha256") or not manifest.get("source_sha256"):
         raise ValueError("Missing final checkpoint/source identity")
     effective = read(run / "effective-config.json")
+    motion = manifest.get("object_motion")
+    if effective.get("object_speed_scale", 1.0) != speed_scale:
+        raise ValueError("Effective object speed scale differs from manifest")
+    if motion is not None:
+        _, expected_motion = scale_object_speed(
+            {
+                "scene": {
+                    "object": {
+                        "init_state": {"lin_vel": motion.get("source_lin_vel_mps")}
+                    }
+                }
+            },
+            speed_scale,
+        )
+        if motion != expected_motion or effective.get("object_motion") != motion:
+            raise ValueError("Object motion metadata differs from declared speed")
+        configured = (
+            effective.get("input_config", {})
+            .get("scene", {})
+            .get("object", {})
+            .get("init_state", {})
+            .get("lin_vel")
+        )
+        if configured != motion["configured_lin_vel_mps"]:
+            raise ValueError(
+                "Effective task velocity differs from object motion metadata"
+            )
+    elif speed_scale != 1.0 or "object_speed_scale" in options:
+        raise ValueError("Object speed setting requires motion metadata")
     coverage = read(run / "coverage.json")
     episodes = lines(run / "episodes.jsonl")
+    if motion is not None:
+        for episode in episodes:
+            observed_motion = episode.get("object_motion", {})
+            if episode.get("object_speed_scale") != speed_scale or any(
+                observed_motion.get(key) != value for key, value in motion.items()
+            ):
+                raise ValueError("Episode object motion differs from configuration")
+            native_default = observed_motion.get("default_lin_vel_mps", [])
+            if len(native_default) != 3 or any(
+                not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or not math.isclose(value, expected, abs_tol=1e-6, rel_tol=1e-6)
+                for value, expected in zip(
+                    native_default, motion["configured_lin_vel_mps"]
+                )
+            ):
+                raise ValueError(
+                    "Native default object velocity differs from configuration"
+                )
     count = cell["episodes"]
     if (
         coverage.get("status") != "passed"
@@ -333,6 +387,7 @@ def audit_cell(cell, study_path):
         for episode_id in range(count)
     }
     result["comparison_identity"] = {
+        "object_speed_scale": speed_scale,
         "checkpoint_sha256": manifest["checkpoint_sha256"],
         "checkpoint_config_sha256": identity["checkpoint_config_sha256"],
         "source_sha256": manifest["source_sha256"],
@@ -351,6 +406,7 @@ def audit_cell(cell, study_path):
     }
     result["task_identity"] = {
         "task_config_sha256": identity["task_config_sha256"],
+        "object_motion": motion,
         "simulation": {
             key: effective.get(key)
             for key in (
@@ -470,11 +526,17 @@ def analyze(path):
     study = read(path)
     if study.get("format") != FORMAT or not study.get("id"):
         raise ValueError("Invalid study descriptor format/id")
+    speed_scale = nonnegative(
+        study.get("identity", {}).get("object_speed_scale", 1.0),
+        "study object speed scale",
+    )
     tasks = study["expected_tasks"]
     if not tasks or len(tasks) != len(set(tasks)):
         raise ValueError("Expected tasks must be nonempty and unique")
     records, raw, seen, runs = [], {}, set(), set()
     for cell in study["cells"]:
+        if cell.get("object_speed_scale", 1.0) != speed_scale:
+            raise ValueError("Study cells have inconsistent object speed scale")
         integer(cell["episodes"], "episodes", 1)
         integer(cell["seed"], "seed")
         integer(cell["num_steps"], "num_steps", 1)
@@ -557,6 +619,7 @@ def analyze(path):
     return {
         "format": "dynamicvla-streaming-study-results-v1",
         "id": study["id"],
+        "object_speed_scale": speed_scale,
         "study": str(path),
         "status": "completed"
         if all(row["status"] == "completed" for row in pooled) and bool(pooled)

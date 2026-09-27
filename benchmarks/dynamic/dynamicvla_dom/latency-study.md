@@ -192,3 +192,18 @@ This is a long background job; use tmux and retain the supervisor log. Estimate
 runtime from measured block duration. Full videos, observations and request/control
 ledgers remain under each run directory; a100episode target does not reduce video
 coverage. A completed block is audited before cumulative metrics are refreshed.
+
+## Object-motion speed as a separate setting
+
+`run.py`, `study.py` and `dense_study.py` accept `--object-speed-scale` (default1.0).
+Use1.25 for the paper's125% initial object-speed setting. This follows the
+reference experiment's scaling of `scene.object.init_state.lin_vel`; the source
+JSON, angular velocity and native physics/control cadence are preserved.
+
+Use separate directories, such as`latency-speed100`and`latency-speed125`, for
+different speed settings. The factor changes the run/study/campaign identity and
+is included in plot labels; resuming with a different factor or mixing speeds in
+one latency curve is rejected. Reports bind requested velocity to the simulator's
+configured velocity and per-episode native default (float32 tolerance); actual
+post-reset velocities remain available for diagnosis. Old artifacts without a
+speed flag are interpreted as the original1.0setting.

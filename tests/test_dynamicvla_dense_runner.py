@@ -61,7 +61,11 @@ def options(tmp_path):
     ]
     for name in ("apple", "avocado", "can"):
         task = tmp_path / f"{name}.json"
-        task.write_text("{}")
+        task.write_text(
+            json.dumps(
+                {"scene": {"object": {"init_state": {"lin_vel": [0.2, 0.1, 0.0]}}}}
+            )
+        )
         argv.extend(["--task-json", str(task)])
     return module().parser().parse_args(argv)
 
@@ -101,3 +105,14 @@ def test_dense_supervisor_requires_exclusive_lock(options):
         with pytest.raises(RuntimeError, match="output lock"):
             m.execute(plan, output)
     assert not (output / "campaign.json").exists()
+
+
+def test_speed_change_is_forwarded_and_changes_campaign_identity(options):
+    m = module()
+    baseline, _ = m.plan_campaign(options)
+    options.object_speed_scale = 1.25
+    faster, output = m.plan_campaign(options)
+    assert faster["fingerprint"] != baseline["fingerprint"]
+    command = m.block_command(faster, faster["blocks"][0], output)
+    assert command[command.index("--object-speed-scale") + 1] == "1.25"
+    assert faster["identity"]["object_speed_scale"] == 1.25
