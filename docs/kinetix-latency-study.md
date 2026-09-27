@@ -123,6 +123,12 @@ python benchmarks/dynamic/kinetix/latency_study.py finish \
 
 三张卡分别运行独立进程，单个环境的步进逻辑不变。默认每个worker绑定16个可用CPU核，可用 `--cpus-per-worker` 调整。控制器等待指定GPU空闲后启动；长任务可在tmux或后台进程中运行。
 
+验证阶段按 **全部 coarse → 全部 fine** 顺序执行。只有所有任务的coarse作业完成并通过结果校验后，才会派发fine作业；断点恢复时也会等待仍在运行的coarse worker。coarse失败会停止后续派发，已有完整结果继续保留。`status.json`及`status`命令中的`validation_order`和`validation_modes`记录顺序与各模式进度。
+
+新计划将跨模式共享的验证配置归入先执行的coarse作业。如果旧自定义硬件计划中的coarse条件依赖fine作业，验证入口会要求新建计划，不修改原有`study.json`。四档默认硬件的既有计划可直接恢复。
+
+每种模式都覆盖四个任务的四档硬件×N=1～5，即80个逻辑配置，每配置512个配对seed。coarse复用零延迟和校准重叠点后，需要新增12个不同配置、6,144回合；fine新增80个配置、40,960回合。最终表格仍按每个任务、硬件与N展开，保留预测最佳N、实测最佳整数集合、置信区间及复用来源，用来比较两种映射下最优点的位置。
+
 查询进度无需加载模型环境：
 
 ```bash
@@ -170,3 +176,5 @@ G保留零延迟实测概率，绘图时采用PCHIP形状保持插值，不强�
 ## English summary
 
 The `coarse` and `fine` modes share the original physics grid. This workflow verifies a complete zero-delay baseline, calibrates delay response, freezes predictions, and then evaluates hardware-mapped conditions with 512 paired seeds per cell. Equivalent command-weight configurations have explicit shared provenance and never increase independent sample counts. Historical FP16 timings define replay scenarios for the trained JAX FP32 policy. All selected tasks and fit limitations remain visible in the generated reports; outputs stay outside Git.
+
+Hardware validation completes and verifies all coarse jobs before dispatching any fine jobs, including when resuming detached workers. Each mode covers four tasks, four hardware profiles and N=1..5. The default study needs 6,144 new coarse episodes and 40,960 new fine episodes after explicit reuse; per-hardware result tables retain all logical combinations.

@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 import sys
 import subprocess
+import threading
+import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -60,6 +63,58 @@ def test_duplicate_or_missing_seed_is_not_accepted_as_complete_coverage():
         study.check_coverage(rows + rows[:1], [1], start_seed=0, episodes=3)
     with pytest.raises(ValueError, match="coverage"):
         study.check_coverage(rows[:-1], [1], start_seed=0, episodes=3)
+
+
+def test_coarse_sources_are_available_before_fine_for_exact_grid_profiles():
+    tools = load_study()
+    profiles = tools.read_profiles(tools.DEFAULT_ARCHIVE)
+    profiles["local_ada"][3] = 1000 / 30
+    matrix = tools.make_matrix(["catapult"], profiles)
+    executions = {row["id"]: row for row in matrix["executions"]}
+    for condition in matrix["conditions"]:
+        if condition["mode"] != "coarse" or condition["source"]["kind"] != "execution":
+            continue
+        source = executions[condition["source"]["id"]]
+        assert source["phase"] == "calibration" or source["mode"] == "coarse"
+
+
+def test_legacy_cross_mode_dependency_is_rejected_before_scheduling(
+    tmp_path, monkeypatch
+):
+    tools = load_study()
+    matrix = tools.make_matrix(["catapult"], tools.read_profiles(tools.DEFAULT_ARCHIVE))
+    # A legacy fine-first plan can assign a shared exact-grid cell to fine.
+    shared = next(row for row in matrix["executions"] if row["mode"] == "coarse")
+    shared["mode"] = "fine"
+    (tmp_path / "study.json").write_text(json.dumps(matrix))
+    (tmp_path / "calibration").mkdir()
+    tools.write_json(
+        tmp_path / "calibration/frozen-model.json",
+        {"study_sha256": tools.digest(tmp_path / "study.json")},
+    )
+    tools.write_json(
+        tmp_path / "status.json",
+        {
+            "phases": {"verification": "completed", "calibration": "completed"},
+            "jobs": {},
+        },
+    )
+    monkeypatch.setattr(tools, "verify_inputs", lambda study: None)
+    monkeypatch.setattr(
+        tools,
+        "run_job_batch",
+        lambda *args, **kwargs: pytest.fail("Incompatible plan reached GPU scheduling"),
+    )
+    args = SimpleNamespace(
+        study_dir=tmp_path,
+        python=Path(sys.executable),
+        gpus="0",
+        cpus_per_worker=1,
+        phase="validation",
+        reuse_study=None,
+    )
+    with pytest.raises(ValueError, match="coarse-first"):
+        tools.run_phase(args)
 
 
 def test_profile_rejects_excluded_or_ambiguous_hardware(tmp_path):
@@ -258,3 +313,102 @@ def test_imported_completion_must_match_original_certificate():
         tools.verify_completion_evidence(
             record, {**original, "episodes_sha256": "changed"}
         )
+
+
+@pytest.mark.parametrize("detached_coarse", [False, True])
+@pytest.mark.parametrize("failed_coarse", [False, True])
+def test_validation_waits_for_all_coarse_workers(
+    tmp_path, monkeypatch, detached_coarse, failed_coarse
+):
+    tools = load_study()
+    coarse_ids = {"a/coarse", "b/coarse"}
+    jobs = [
+        {"id": name, "phase": "validation", "mode": mode}
+        for name, mode in (
+            ("a/fine", "fine"),
+            ("a/coarse", "coarse"),
+            ("b/fine", "fine"),
+            ("b/coarse", "coarse"),
+        )
+    ]
+    (tmp_path / "study.json").write_text(json.dumps({"jobs": jobs}))
+    (tmp_path / "calibration").mkdir()
+    (tmp_path / "calibration/frozen-model.json").write_text(
+        json.dumps({"study_sha256": tools.digest(tmp_path / "study.json")})
+    )
+    status = {
+        "phases": {"verification": "completed", "calibration": "completed"},
+        "jobs": {},
+    }
+    if detached_coarse:
+        status["jobs"]["b/coarse"] = {
+            "status": "external_running",
+            "pid": 123,
+            "output": str(tmp_path / "existing-coarse"),
+        }
+    tools.write_json(tmp_path / "status.json", status)
+    launched, verified = [], set()
+    fast_finished = threading.Event()
+    monkeypatch.setattr(tools, "verify_inputs", lambda study: None)
+    monkeypatch.setattr(tools, "gpu_is_empty", lambda gpu: True)
+    monkeypatch.setattr(tools, "recover_completed_job", lambda *args: False)
+    monkeypatch.setattr(
+        tools,
+        "attach_live_worker",
+        lambda record: record.get("status") == "external_running",
+    )
+    monkeypatch.setattr(
+        tools,
+        "job_command",
+        lambda study, job, directory, **kwargs: ["fake-worker", job["id"]],
+    )
+
+    def verify(study, job, output, **kwargs):
+        verified.add(job["id"])
+        return {"episodes": 512}
+
+    monkeypatch.setattr(tools, "verify_job", verify)
+
+    class Worker:
+        def __init__(self, command, **kwargs):
+            self.job_id = command[-1]
+            if self.job_id.endswith("/fine"):
+                assert coarse_ids <= verified, "Fine started before coarse completion"
+            launched.append(self.job_id)
+            self.pid = 1000 + len(launched)
+
+        def wait(self):
+            if self.job_id == "a/coarse":
+                fast_finished.set()
+                return int(failed_coarse)
+            if self.job_id == "b/coarse":
+                assert fast_finished.wait(2)
+                time.sleep(0.05)
+            return 0
+
+    monkeypatch.setattr(tools.subprocess, "Popen", Worker)
+    args = SimpleNamespace(
+        study_dir=tmp_path,
+        python=Path(sys.executable),
+        gpus="0,1",
+        cpus_per_worker=1,
+        phase="validation",
+        reuse_study=None,
+    )
+    if failed_coarse:
+        with pytest.raises(RuntimeError, match="incomplete"):
+            tools.run_phase(args)
+        assert not any(name.endswith("/fine") for name in launched)
+    else:
+        tools.run_phase(args)
+        assert set(launched) == {job["id"] for job in jobs} - (
+            {"b/coarse"} if detached_coarse else set()
+        )
+    final = json.loads((tmp_path / "status.json").read_text())
+    assert final["phases"]["validation"] == ("failed" if failed_coarse else "completed")
+    assert final["validation_modes"]["coarse"] == (
+        "failed" if failed_coarse else "completed"
+    )
+    assert final["validation_modes"].get("fine") == (
+        None if failed_coarse else "completed"
+    )
