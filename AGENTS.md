@@ -77,3 +77,5 @@ LingBot优先适配RoboTwin，入口为 `benchmarks/static/lingbot_robotwin/`。
 历史硬件推理延迟统一查阅 [KINETIX 硬件延迟档案](docs/kinetix-hardware-latencies.md) 及其 CSV。按用户约定仅维护 `local_ada`、`rtx3090`、`agx15`、`agx30` 四档；AGX Orin 50W 不纳入该档案、后续汇总或默认延迟映射。档案是历史 PyTorch eager FP16、同架构随机初始化权重的完整同步调用计时，不得作为当前已训练 JAX FP32 policy 的实测，也不得据此直接归因量化收益。查询已有数据先读档案，不自动启动新压测。
 
 硬件延迟研究使用 [配对实验工作流](docs/kinetix-latency-study.md)。主任务按既有零延迟扫描的总体上升趋势选择：catapult、trampoline、mjc_half_cheetah、mjc_walker；允许高步数段小幅回落，不强制单调，也不为重现某种曲线选择任务。每单元512个配对seed。校准后冻结预测，再运行映射验证；复用数据的来源须显式记录，校准重叠点不计为留出验证。动态延迟仍由虚拟时钟注入，不重新启动缩小物理时间片的研究。
+
+KINETIX量化在独立研发分支推进，见 [量化研发说明](docs/kinetix-quantization.md)。当前配方描述不代表后端已接入；优先移植共享优化的FP16与真实W4A16执行路径，再处理校准W4A4。关注完整模型推理时间，原始checkpoint与fine物理协议保持固定，不直接执行参考工程源码，不把历史其他协议或其他后端的质量／速度当成本仓实测。
