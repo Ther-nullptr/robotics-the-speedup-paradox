@@ -63,8 +63,14 @@ class KinetixFlowPolicy:
 
     def infer(self, observation, flow_steps):
         import jax
-        import jax.numpy as jnp
         import numpy as np
+
+        return np.asarray(jax.device_get(self.infer_device(observation, flow_steps)))
+
+    def infer_device(self, observation, flow_steps):
+        """Return the existing sampler output without an explicit host transfer."""
+        import jax
+        import jax.numpy as jnp
 
         if flow_steps not in self._compiled:
             self._compiled[flow_steps] = jax.jit(
@@ -72,5 +78,4 @@ class KinetixFlowPolicy:
             )
         key = jax.random.fold_in(self._rng, self._requests)
         self._requests += 1
-        output = self._compiled[flow_steps](key, jnp.asarray(observation))
-        return np.asarray(jax.device_get(output))
+        return self._compiled[flow_steps](key, jnp.asarray(observation))

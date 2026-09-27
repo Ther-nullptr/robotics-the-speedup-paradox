@@ -3,19 +3,11 @@
 from contextlib import contextmanager
 
 
-def device_chunks(policy, env):
-    """Prime four actions per inference, then expose only executed control states.
-
-    This experiment only supports the native budget and zero injected latency.
-    Compiling a larger region can change floating-point results; callers must
-    independently compare full trajectories before claiming a valid speedup.
-    """
+def compile_device_window(env, *, resident_actions=False):
+    """Compile the same native controls, optionally guarding the full GPU chunk."""
     import jax
     import jax.numpy as jnp
-    import numpy as np
 
-    original_reset, original_step, original_infer = env.reset, env.step, policy.infer
-    pending = {}
     static_horizon = 4
 
     def advance(state, noise_rng, control_step, actions, params):
@@ -57,8 +49,17 @@ def device_chunks(policy, env):
                 ~finished & (step < env.max_steps), active, inactive, operand=None
             )
 
+        valid_actions = (
+            jnp.isfinite(actions).all() if resident_actions else jnp.bool_(True)
+        )
         final, outputs = jax.lax.scan(
-            one, (state, control_step, jnp.bool_(False)), actions
+            one,
+            (
+                state,
+                control_step,
+                ~valid_actions if resident_actions else jnp.bool_(False),
+            ),
+            actions[:static_horizon] if resident_actions else actions,
         )
         states, observations, rewards, dones, solved, finite = outputs
         # Split on device to avoid a Python/JAX gather for every state leaf at
@@ -67,14 +68,32 @@ def device_chunks(policy, env):
             jax.tree.map(lambda x: x[i], states) for i in range(static_horizon)
         )
         observations = tuple(observations[i] for i in range(static_horizon))
-        return (
+        result = (
             states,
             observations,
             (rewards, dones, solved, finite),
             final[1] - control_step,
         )
+        return (*result, valid_actions) if resident_actions else result
 
-    compiled = jax.jit(advance)
+    return jax.jit(advance)
+
+
+def device_chunks(policy, env):
+    """Prime four actions per inference, then expose only executed control states.
+
+    This experiment only supports the native budget and zero injected latency.
+    Compiling a larger region can change floating-point results; callers must
+    independently compare full trajectories before claiming a valid speedup.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    original_reset, original_step, original_infer = env.reset, env.step, policy.infer
+    pending = {}
+    static_horizon = 4
+    compiled = compile_device_window(env)
 
     def reset(seed):
         pending.clear()

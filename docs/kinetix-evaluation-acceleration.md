@@ -1,6 +1,6 @@
 # KINETIX：保持原生控制语义的评估加速
 
-本页区分两类工作：定位原生GPU执行的数值重复性，以及减少单环境评估的host调度/同步。模型、物理源码与默认`run.py`保持原样；新入口都是显式实验工具。环境与checkpoint配置见[KINETIX入口](../benchmarks/dynamic/kinetix/README.md)，质量矩阵和动作预处理JIT基准见[flow步数实验](kinetix-flow-quality.md)。
+本页区分两类工作：定位原生GPU执行的数值重复性，以及减少单环境评估的host调度/同步。模型计算、物理源码与默认`run.py`的执行方式保持原样；policy新增GPU结果接口，原同步NumPy接口保留。新入口都是显式实验工具。环境与checkpoint配置见[KINETIX入口](../benchmarks/dynamic/kinetix/README.md)，质量矩阵和动作预处理JIT基准见[flow步数实验](kinetix-flow-quality.md)。
 
 ## Device chunks
 
@@ -49,6 +49,38 @@ RTX 6000 Ada、JAX0.4.35/jaxlib0.4.34、原RTC BC24 FP32、N=5、seed0..3、每s
 "$ROBOTICS_KINETIX_PYTHON" -B benchmarks/dynamic/kinetix/check_noise_rounding.py \
   --gpu 1 --output-dir runs/dynamic/kinetix/noise-rounding-001
 ```
+
+## 动作驻留GPU
+
+原来的device-chunk路径仍会把模型输出转成CPU NumPy，再把动作传回GPU。`KinetixFlowPolicy.infer_device()`新增不做显式host回读的JAX数组接口；原`infer()`仍返回同步完成的NumPy数组，两者共享同一个采样器和RNG请求计数。
+
+`resident_action_runner.py`将完整8条预测动作直接交给独立编译的控制窗口。shape/dtype检查只读取metadata；全部动作的有限值检查在GPU进行，检查失败时执行0条控制并保持状态不变，包含本轮不执行的尾部动作。每条实际控制的终止、成功、非有限状态和预算检查保留。模型与物理没有合并成一个JIT；中间状态/观测仍完整返回，没有同时进行状态压缩或多环境批量化。
+
+计时路径只回传窗口metadata，不读取完整动作值；完整动作仅在明确的trace采集阶段回读，用于hash/事件核对。`policy_enqueue_seconds`只表示主机提交跨度，不能当作完成的模型推理时延；`window_call_and_wait_seconds`也会等待尚未完成的模型GPU执行，不能解释为纯环境耗时。比较以完整回合wall time为准。
+
+```bash
+"$ROBOTICS_KINETIX_PYTHON" -B -u benchmarks/dynamic/kinetix/benchmark_resident_actions.py \
+  --policy-dir "$ROBOTICS_KINETIX_POLICY_DIR" --gpu 3 \
+  --level car_launch --flow-steps 5 --seeds 0,1,2,3 --repeats 5 \
+  --reference-run runs/dynamic/kinetix/device-chunks-car-001/benchmark.json \
+  --output-dir runs/dynamic/kinetix/resident-actions-car-001
+```
+
+`--reference-run`可选，用于核对既有device-chunk产物中的原生轨迹；关卡、checkpoint、模型/物理配置、N、seed和执行模式须匹配。脚本先检查原生重复性、原生/device-chunk/驻留路径的完整轨迹及驻留路径自身重复性，任一失败就不计时。随后按轮交替测量host往返版device chunks与驻留版，并确认计时结果匹配轨迹、完整动作回读次数为0。
+
+以下增量来自RTX 6000 Ada、原RTC BC24 FP32、N=5、每任务seed0..3、五轮配对计时。每个任务的两种实现使用同一卡和同一进程；物理与控制条件沿用上节。
+
+| 任务 | Host往返版device chunks | 动作驻留版 | 增量加速比 | 五轮比值范围 |
+| --- | ---: | ---: | ---: | --- |
+| Car Launch | 18.309 s | 17.540 s | 1.044× | 1.036–1.056× |
+| H17 Unicycle | 29.334 s | 28.415 s | 1.032× | 1.031–1.034× |
+| Chain Lander | 19.190 s | 18.555 s | 1.034× | 1.032–1.038× |
+
+共60对计时回合，逐回合结果一致，驻留计时分支的完整动作回读次数均为0；五轮比值均大于1。各路径的12个seed/任务组合覆盖878个控制状态和222次模型调用，并与此前保存的原生轨迹一致。额外GPU检查确认“首条动作含Inf”和“未执行尾部含NaN”均不会推进物理状态。五轮范围是实测波动，不是置信区间。
+
+这些是相对host往返版device chunks的**增量**，不能乘以上节不同运行的加速比作为原生总加速。新runner也减少了CPU数组复制、旧动作尾部维护和调度检查，因此结果归属于整条驻留动作实现，未单独隔离PCIe传输的贡献。计时覆盖参数检查、协议构造、reset及完整回合；排除首次编译、trace和文件输出。当前仍只验证这3个任务、N=5、4个seed的零延迟/原生预算/execute-four场景，默认`run.py`不自动启用此路径。
+
+输出为`benchmark.json`和工具源码快照，包含各条路径的原始trace、动作有限值检查、配对计时、依赖/代码/设备身份以及可选历史引用的hash。脚本和报告字段使用英文。
 
 ## 原生重复性诊断
 
