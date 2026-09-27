@@ -162,7 +162,9 @@ def make_matrix(tasks, profiles):
             add(task, "calibration", "fine", 5, k * (1000 / 120))
         for k in range(3):
             add(task, "calibration", "coarse", 5, k * (1000 / 30))
-        for mode in ("fine", "coarse"):
+        # Coarse validation may share exact-grid actions with fine profiles.
+        # Assign shared executions to the earlier coarse batch.
+        for mode in ("coarse", "fine"):
             for hardware, values in profiles.items():
                 for n, latency in values.items():
                     add(task, "validation", mode, n, latency, hardware)
@@ -661,6 +663,19 @@ def run_phase(args):
     if args.phase == "validation":
         if status["phases"].get("calibration") != "completed":
             raise ValueError("Complete calibration before validation")
+        executions = {row["id"]: row for row in study.get("executions", [])}
+        for condition in study.get("conditions", []):
+            if (
+                condition["role"] == "validation"
+                and condition["mode"] == "coarse"
+                and condition["source"]["kind"] == "execution"
+            ):
+                source = executions[condition["source"]["id"]]
+                if source["phase"] == "validation" and source["mode"] != "coarse":
+                    raise ValueError(
+                        "Coarse outcomes depend on fine validation jobs; "
+                        "create a new coarse-first study without changing this plan"
+                    )
         frozen = directory / "calibration" / "frozen-model.json"
         if not frozen.is_file():
             raise ValueError("Freeze calibration predictions before mapped validation")
@@ -703,6 +718,52 @@ def run_phase(args):
                 borrowed["original_verification"] = previous_job.get("verification")
                 borrowed.update(status="completed", verification=verified)
             status["jobs"][job["id"]] = borrowed
+    status.update(controller_pid=os.getpid(), phase=args.phase, updated_at=utc_now())
+    status["phases"][args.phase] = "running"
+    status["validation_order"] = ["coarse", "fine"]
+    if args.phase == "validation":
+        status.setdefault("validation_modes", {})
+        batches = [
+            (mode, [job for job in jobs if job["mode"] == mode])
+            for mode in status["validation_order"]
+        ]
+    else:
+        batches = [(args.phase, jobs)]
+    try:
+        for mode, batch in batches:
+            if args.phase == "validation":
+                status["validation_modes"][mode] = "running"
+                print(f"Validation mapping {mode} started", flush=True)
+            status["updated_at"] = utc_now()
+            write_json(status_path, status)
+            try:
+                if not run_job_batch(args, study, batch, directory, status, gpus=gpus):
+                    raise RuntimeError(
+                        "Phase is incomplete; successful jobs are retained for resume"
+                    )
+            except BaseException:
+                if args.phase == "validation":
+                    status["validation_modes"][mode] = "failed"
+                raise
+            if args.phase == "validation":
+                status["validation_modes"][mode] = "completed"
+                print(f"Validation mapping {mode} completed", flush=True)
+            status["updated_at"] = utc_now()
+            write_json(status_path, status)
+        status["phases"][args.phase] = "completed"
+    except BaseException:
+        status["phases"][args.phase] = "failed"
+        raise
+    finally:
+        status["updated_at"] = utc_now()
+        write_json(status_path, status)
+        lock_stream.close()
+    print(f"Phase {args.phase} completed", flush=True)
+
+
+def run_job_batch(args, study, jobs, directory, status, *, gpus):
+    """Finish and verify every job, including detached workers, before returning."""
+    status_path = directory / "status.json"
     pending = []
     for job in jobs:
         record = status["jobs"].get(job["id"], {})
@@ -710,8 +771,6 @@ def run_phase(args):
             continue
         else:
             pending.append(job)
-    status.update(controller_pid=os.getpid(), phase=args.phase, updated_at=utc_now())
-    status["phases"][args.phase] = "running"
     write_json(status_path, status)
     mutex, stopped = threading.Lock(), threading.Event()
     available_cpus = (
@@ -835,18 +894,9 @@ def run_phase(args):
             for job in jobs
         ):
             threading.Event().wait(10)
-    complete = all(
+    return all(
         status["jobs"].get(job["id"], {}).get("status") == "completed" for job in jobs
     )
-    status["phases"][args.phase] = "completed" if complete else "failed"
-    status["updated_at"] = utc_now()
-    write_json(status_path, status)
-    lock_stream.close()
-    if not complete:
-        raise RuntimeError(
-            "Phase is incomplete; successful jobs are retained for resume"
-        )
-    print(f"Phase {args.phase} completed", flush=True)
 
 
 def show_status(args):
@@ -867,7 +917,13 @@ def show_status(args):
         )
     print(
         json.dumps(
-            {"checked_at": utc_now(), "phases": status["phases"], "jobs": rows},
+            {
+                "checked_at": utc_now(),
+                "phases": status["phases"],
+                "validation_order": status.get("validation_order"),
+                "validation_modes": status.get("validation_modes", {}),
+                "jobs": rows,
+            },
             indent=2,
         )
     )
