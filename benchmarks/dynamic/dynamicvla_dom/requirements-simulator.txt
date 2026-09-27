@@ -1,0 +1,7 @@
+# Add to an existing Isaac Sim 4.5 / compatible Isaac Lab environment.
+# Do not install model requirements into the Isaac Python environment.
+shapely
+pyzmq
+h5py
+imageio
+imageio-ffmpeg

@@ -1,0 +1,10 @@
+# Install into a separate model environment. Choose the CUDA wheel for your machine.
+torch==2.7.1
+torchvision==0.22.1
+lerobot==0.3.3
+transformers==5.2.0
+timm
+numpy==1.26.4
+scipy
+safetensors
+pyzmq

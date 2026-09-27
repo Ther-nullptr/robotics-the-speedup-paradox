@@ -197,3 +197,11 @@ bash benchmarks/dynamic/kinetix/run.sh \
 ```
 
 依赖版本、profile重放、录像和统计见 [KINETIX case](../benchmarks/dynamic/kinetix/README.md)。`--dry-run` 不需要JAX；`--record-video` 保存完整回合。`--mapping fine`（默认）表示边界物理步内的指令混合；`--mapping coarse` 按控制步取整；物理dt/frame_skip均保持原生值。固定步数延迟扫描和硬件映射的配对实验、CPU拟合环境及报告命令见 [延迟实验工作流](kinetix-latency-study.md)。
+
+## DynamicVLA＋DOM
+
+模型和Isaac使用独立Python环境，配置与命令见
+[case指南](../benchmarks/dynamic/dynamicvla_dom/README.md)。运行源码由仓内维护，
+不需要外部DynamicVLA checkout；checkpoint、tokenizer/backbone缓存、DOM USD与纹理
+和本地Franka资源显式绑定。运行入口始终离线，缺少资源时报告错误。
+首版提供native-non-streaming/streaming，默认录制MP4；不接入paper_sync。

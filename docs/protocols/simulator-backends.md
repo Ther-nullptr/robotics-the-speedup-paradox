@@ -1,6 +1,6 @@
 # 多模拟器后端与运行环境
 
-范围包含 LIBERO、RoboCasa、RoboTwin、Kinetix，以及 DynamicVLA 的 Dynamic Object Manipulation（DOM）benchmark。当前均为接入规划，没有安装或运行模拟器。它们跨越不同物理引擎和执行模型，共享实验与数据契约，各自保留运行时实现。
+范围包含 LIBERO、RoboCasa、RoboTwin、Kinetix，以及 DynamicVLA 的 Dynamic Object Manipulation（DOM）benchmark。实际接入状态及验收范围见各case入口。它们跨越不同物理引擎和执行模型，共享实验与数据契约，各自保留运行时实现。
 
 任务入口分为 [静态](../../benchmarks/static/README.md) 与 [动态](../../benchmarks/dynamic/README.md)。下表描述后端能力与依赖，不是模型兼容矩阵；每个case单独绑定模型/权重、任务和环境版本。两条路径各自维护控制循环，模拟器分类由具体任务决定。
 
@@ -72,3 +72,11 @@ tests/integration/simulators/     # 按后端分开的验收
 每个后端/协议组合单独标 planned、implemented-unverified、verified。支持某个后端的静态场景，不代表其全部动态协议或渲染模式都已验证。
 
 当前 trace v1 只支持单 run 中串行 episodes。Kinetix/DOM 批量环境先按环境导出独立 run；真正需要联合时间线时，再扩展 env/agent ID 与时钟协议。不得仅增加多个 episode ID 就宣称已有并行语义。后端 capability、环境锁定和媒体扩展同样应先走 [契约演进](artifacts.md)。
+
+## DOM原生单环境实现
+
+[DynamicVLA＋DOM入口](../../benchmarks/dynamic/dynamicvla_dom/README.md)已迁入模型与DOM评估所需源码，
+保留独立模型/Isaac环境和原生动作保持机制。首版固定原生0.04s物理步长、Franka单环境，
+支持native-non-streaming和native-streaming，不含paper_sync。模型生成chunk、
+实际应用chunk及保持旧动作的控制步数分别记录。物体掉落等原生失败与真正预算超时
+按触发的termination term区分；异常和断连不记作策略失败。

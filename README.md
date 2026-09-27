@@ -23,7 +23,7 @@
 
 Cosmos 数字是单回合闭环结果，不能代替全任务集成功率。表中π0.5全量结果来自原始基线，不能转用于新优化配置；任务、初态和采样配置见对应case说明。量化按显式模块范围启用，尚无通过全量质量验收的量化预设。完整policy调用时延比与论文控制周期加速比分别报告。
 
-LingBot优先适配RoboTwin静态任务；KINETIX已接入仓内JAX模型/环境与fine／coarse动态延迟协议，DynamicVLA＋DOM仍在规划中。静态与动态任务分别组织，模型和模拟器按已验证的 case 绑定；接口形状兼容不代表任意组合可用。
+LingBot优先适配RoboTwin静态任务；KINETIX已接入仓内JAX模型/环境与fine／coarse动态延迟协议，DynamicVLA＋DOM已提供原生单环境入口（non-streaming/streaming，不含paper_sync）。静态与动态任务分别组织，模型和模拟器按已验证的 case 绑定；接口形状兼容不代表任意组合可用。
 
 ## 快速开始：CPU 工具
 
