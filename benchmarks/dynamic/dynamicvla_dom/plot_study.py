@@ -2,7 +2,35 @@
 
 import argparse
 import json
+import math
 from pathlib import Path
+
+
+def success_rate_errors(metrics):
+    """Clamp only floating-point endpoint noise, not invalid confidence data."""
+    lower, upper = [], []
+    tolerance = 1e-12
+    for row in metrics:
+        rate, low, high = (
+            row[key]
+            for key in (
+                "success_rate",
+                "success_rate_wilson95_low",
+                "success_rate_wilson95_high",
+            )
+        )
+        if (
+            not all(math.isfinite(value) for value in (rate, low, high))
+            or not 0 <= rate <= 1
+            or low < -tolerance
+            or high > 1 + tolerance
+            or low > rate + tolerance
+            or high < rate - tolerance
+        ):
+            raise ValueError("Invalid success-rate confidence interval")
+        lower.append(max(0.0, rate - low) * 100)
+        upper.append(max(0.0, high - rate) * 100)
+    return [lower, upper]
 
 
 def main():
@@ -29,7 +57,8 @@ def main():
     pooled = [r for r in data["pooled_conditions"] if r["status"] == "completed"]
     if pooled:
         groups.append(("Pooled", pooled))
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+    dense = "included_blocks" in data
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.2 if dense else 4.8))
     colors = ["#4477AA", "#EE6677", "#228833", "#AA3377", "#66CCEE"]
     handles = []
     for index, (name, selected) in enumerate(groups):
@@ -45,16 +74,10 @@ def main():
         metrics = [r["metrics"] for r in selected]
         x = [m["effective_service_ms_median"] for m in metrics]
         y = np.array([m["success_rate"] * 100 for m in metrics])
-        bounds = np.array(
-            [
-                [m["success_rate_wilson95_low"] * 100 for m in metrics],
-                [m["success_rate_wilson95_high"] * 100 for m in metrics],
-            ]
-        )
         axes[0].errorbar(
             x,
             y,
-            yerr=np.vstack([y - bounds[0], bounds[1] - y]),
+            yerr=success_rate_errors(metrics),
             color=color,
             marker=marker,
             linewidth=1.3,
@@ -79,14 +102,14 @@ def main():
         ax.grid(alpha=0.2)
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylim(-3, 103)
-    fig.suptitle(
-        f"Native streaming: latency and task success ({next(iter(steps))} refinement steps)",
-        y=0.99,
-    )
+    title = f"Native streaming: latency and task success ({next(iter(steps))} refinement steps)"
+    if dense:
+        title += f"\n{'Interim' if data['interim'] else 'Final'}: {data['included_blocks']}/{data['planned_blocks']} balanced blocks, {data['included_episodes']} episodes"
+    fig.suptitle(title, y=0.99, fontsize=13 if dense else None)
     fig.legend(
         handles=handles,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.91),
+        bbox_to_anchor=(0.5, 0.88 if dense else 0.91),
         ncol=len(handles),
         frameon=False,
     )
@@ -97,7 +120,9 @@ def main():
         ha="center",
         fontsize=8,
     )
-    fig.subplots_adjust(left=0.065, right=0.99, top=0.77, bottom=0.19, wspace=0.33)
+    fig.subplots_adjust(
+        left=0.065, right=0.99, top=0.73 if dense else 0.77, bottom=0.19, wspace=0.33
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "pdf"):
         fig.savefig(
