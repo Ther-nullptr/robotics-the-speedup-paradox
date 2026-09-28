@@ -121,7 +121,21 @@ python benchmarks/dynamic/kinetix/latency_study.py finish \
   --analysis-python "$KINETIX_ANALYSIS_PYTHON" --gpus 0,1,2
 ```
 
-三张卡分别运行独立进程，单个环境的步进逻辑不变。默认每个worker绑定16个可用CPU核，可用 `--cpus-per-worker` 调整。控制器等待指定GPU空闲后启动；长任务可在tmux或后台进程中运行。
+默认每张卡运行一个独立进程，单个环境的步进逻辑不变。每个worker默认绑定16个可用CPU核，可用 `--cpus-per-worker` 调整。控制器等待指定GPU空闲后启动；长任务可在tmux或后台进程中运行。
+
+`--workers-per-gpu`可显式提高每卡进程上限，例如在有96个可用逻辑CPU的机器上，用三张卡运行最多六个独立作业：
+
+```bash
+python benchmarks/dynamic/kinetix/latency_study.py finish \
+  --study-dir "$KINETIX_STUDY" \
+  --python "$ROBOTICS_KINETIX_PYTHON" \
+  --analysis-python "$KINETIX_ANALYSIS_PYTHON" \
+  --gpus 1,2,3 --workers-per-gpu 2 --cpus-per-worker 16
+```
+
+已有且身份匹配的worker计入上限，包括尚未初始化CUDA的进程；恢复时继续接管它们。仅与当前study的进程共享GPU，发现其他计算进程时等待。CPU集合在本study的运行worker之间互不重叠；总预留超过控制器CPU亲和范围时，启动前报错。模型及模拟器各加载一份，显存随进程数累加。上限与CPU分配进入状态记录，原有数据复用和coarse→fine完成边界保持不变。
+
+这是评估吞吐开关。各进程仍使用相同模型、物理参数、seed与外部注入延迟，宿主墙钟不会推进模拟器。并发时的`host_policy_call_seconds`包含资源争用，不能作为独占硬件推理时延或回写延迟profile。吞吐收益须按具体任务测量；同时核对逐回合成功、终止原因和控制步数。原生GPU浮点运算也可能在串行重复运行中产生细微差异，因此保留原生源码不等于保证完整轨迹逐位一致。
 
 验证阶段按 **全部 coarse → 全部 fine** 顺序执行。只有所有任务的coarse作业完成并通过结果校验后，才会派发fine作业；断点恢复时也会等待仍在运行的coarse worker。coarse失败会停止后续派发，已有完整结果继续保留。`status.json`及`status`命令中的`validation_order`和`validation_modes`记录顺序与各模式进度。
 
@@ -178,3 +192,5 @@ G保留零延迟实测概率，绘图时采用PCHIP形状保持插值，不强�
 The `coarse` and `fine` modes share the original physics grid. This workflow verifies a complete zero-delay baseline, calibrates delay response, freezes predictions, and then evaluates hardware-mapped conditions with 512 paired seeds per cell. Equivalent command-weight configurations have explicit shared provenance and never increase independent sample counts. Historical FP16 timings define replay scenarios for the trained JAX FP32 policy. All selected tasks and fit limitations remain visible in the generated reports; outputs stay outside Git.
 
 Hardware validation completes and verifies all coarse jobs before dispatching any fine jobs, including when resuming detached workers. Each mode covers four tasks, four hardware profiles and N=1..5. The default study needs 6,144 new coarse episodes and 40,960 new fine episodes after explicit reuse; per-hardware result tables retain all logical combinations.
+
+Use `--workers-per-gpu 2` to allow two independent processes per selected GPU; the default remains one. Only matching workers owned by the current study may share a GPU. Adopted and pre-CUDA workers count toward the limit, with separate CPU reservations. This changes evaluation throughput, not simulated latency. Contended host timings are not dedicated-device latency measurements. Validate task outcomes and control counts; unchanged native GPU code does not imply bitwise-identical floating-point trajectories.

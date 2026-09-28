@@ -600,6 +600,51 @@ def worker_is_alive(record):
     return str(record["output"]).encode() in arguments
 
 
+def live_workers(status):
+    return [
+        record
+        for record in status["jobs"].values()
+        if record.get("status") in {"running", "external_running"}
+        and worker_is_alive(record)
+    ]
+
+
+def gpu_has_capacity(gpu, status, workers_per_gpu):
+    """Share only with this study's live workers, including pre-CUDA startup."""
+    owned = {record["pid"] for record in live_workers(status) if record["gpu"] == gpu}
+    if len(owned) >= workers_per_gpu:
+        return False
+    if not owned:
+        return gpu_is_empty(gpu)
+    processes = subprocess.check_output(
+        [
+            "nvidia-smi",
+            f"--id={gpu}",
+            "--query-compute-apps=pid",
+            "--format=csv,noheader",
+        ],
+        text=True,
+    )
+    return {int(pid) for pid in processes.split()} <= owned
+
+
+def allocate_worker_cpus(status, available, count):
+    """Reserve disjoint CPU sets without moving already running workers."""
+    if not available:
+        return []
+    used = set()
+    for record in live_workers(status):
+        if "cpu_affinity" in record:
+            used.update(record["cpu_affinity"])
+        else:
+            try:
+                used.update(os.sched_getaffinity(record["pid"]))
+            except ProcessLookupError:
+                continue
+    free = [cpu for cpu in available if cpu not in used]
+    return free[:count] if len(free) >= count else None
+
+
 def attach_live_worker(record):
     if record.get("status") in {"running", "external_running"} and worker_is_alive(
         record
@@ -639,14 +684,25 @@ def run_phase(args):
     study = json.loads((directory / "study.json").read_text())
     verify_inputs(study)
     args.python = interpreter_path(args.python)
+    args.workers_per_gpu = getattr(args, "workers_per_gpu", 1)
     gpus = [int(value) for value in args.gpus.split(",")]
     if (
         not gpus
         or min(gpus) < 0
         or len(gpus) != len(set(gpus))
         or args.cpus_per_worker < 1
+        or args.workers_per_gpu < 1
     ):
-        raise ValueError("Choose distinct nonnegative GPU indices")
+        raise ValueError(
+            "Choose distinct nonnegative GPUs and positive worker/CPU counts"
+        )
+    if hasattr(os, "sched_getaffinity") and (
+        len(gpus) * args.workers_per_gpu * args.cpus_per_worker
+        > len(os.sched_getaffinity(0))
+    ):
+        raise ValueError(
+            "Worker CPU reservations exceed affinity; reduce --cpus-per-worker"
+        )
     lock_stream = (directory / "controller.lock").open("a+")
     fcntl.flock(lock_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
     status_path = directory / "status.json"
@@ -721,6 +777,8 @@ def run_phase(args):
     status.update(controller_pid=os.getpid(), phase=args.phase, updated_at=utc_now())
     status["phases"][args.phase] = "running"
     status["validation_order"] = ["coarse", "fine"]
+    status["workers_per_gpu"] = args.workers_per_gpu
+    status["cpus_per_worker"] = args.cpus_per_worker
     if args.phase == "validation":
         status.setdefault("validation_modes", {})
         batches = [
@@ -776,65 +834,83 @@ def run_job_batch(args, study, jobs, directory, status, *, gpus):
     available_cpus = (
         sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else []
     )
+    workers_per_gpu = getattr(args, "workers_per_gpu", 1)
 
-    def worker(lane, gpu):
+    def worker(gpu):
         while not stopped.is_set():
-            with mutex:
-                if not pending:
-                    return
-            while not gpu_is_empty(gpu):
+            while True:
                 with mutex:
-                    if not pending:
+                    if stopped.is_set() or not pending:
                         return
+                    cpus = allocate_worker_cpus(
+                        status, available_cpus, args.cpus_per_worker
+                    )
+                    if cpus is not None and gpu_has_capacity(
+                        gpu, status, workers_per_gpu
+                    ):
+                        # Keep capacity reservation and process registration in
+                        # the same critical section, including CUDA startup.
+                        job = pending.pop(0)
+                        record = status["jobs"].get(job["id"], {})
+                        if recover_completed_job(
+                            study, job, record
+                        ) or attach_live_worker(record):
+                            status["updated_at"] = utc_now()
+                            write_json(status_path, status)
+                            continue
+                        attempt = int(record.get("attempt", 0)) + 1
+                        output = (
+                            directory
+                            / "executions"
+                            / job["id"]
+                            / f"attempt-{attempt:03d}"
+                        )
+                        output.parent.mkdir(parents=True, exist_ok=True)
+                        launcher_log = output.parent / f"attempt-{attempt:03d}.log"
+                        command = job_command(
+                            study,
+                            job,
+                            directory,
+                            python=args.python,
+                            gpu=gpu,
+                            output=output,
+                        )
+                        if cpus:
+                            command = [
+                                "taskset",
+                                "-c",
+                                ",".join(map(str, cpus)),
+                                *command,
+                            ]
+                        record = {
+                            "status": "running",
+                            "attempt": attempt,
+                            "gpu": gpu,
+                            "output": str(output),
+                            "log": str(launcher_log),
+                            "started_at": utc_now(),
+                            "command": command,
+                            "cpu_affinity": cpus,
+                        }
+                        status["jobs"][job["id"]] = record
+                        with launcher_log.open("x") as log:
+                            process = subprocess.Popen(
+                                command,
+                                cwd=ROOT,
+                                stdout=log,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True,
+                            )
+                        record["pid"] = process.pid
+                        status["updated_at"] = utc_now()
+                        write_json(status_path, status)
+                        print(
+                            f"Started {job['id']} on GPU {gpu}; PID {process.pid}",
+                            flush=True,
+                        )
+                        break
                 if stopped.wait(10):
                     return
-            with mutex:
-                if not pending:
-                    return
-                job = pending.pop(0)
-                record = status["jobs"].get(job["id"], {})
-                if recover_completed_job(study, job, record) or attach_live_worker(
-                    record
-                ):
-                    status["updated_at"] = utc_now()
-                    write_json(status_path, status)
-                    continue
-                attempt = int(record.get("attempt", 0)) + 1
-                output = directory / "executions" / job["id"] / f"attempt-{attempt:03d}"
-                output.parent.mkdir(parents=True, exist_ok=True)
-                launcher_log = output.parent / f"attempt-{attempt:03d}.log"
-                command = job_command(
-                    study, job, directory, python=args.python, gpu=gpu, output=output
-                )
-                cpus = available_cpus[
-                    lane * args.cpus_per_worker : (lane + 1) * args.cpus_per_worker
-                ]
-                if cpus:
-                    command = ["taskset", "-c", ",".join(map(str, cpus)), *command]
-                record = {
-                    "status": "running",
-                    "attempt": attempt,
-                    "gpu": gpu,
-                    "output": str(output),
-                    "log": str(launcher_log),
-                    "started_at": utc_now(),
-                    "command": command,
-                }
-                status["jobs"][job["id"]] = record
-                with launcher_log.open("x") as log:
-                    process = subprocess.Popen(
-                        command,
-                        cwd=ROOT,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        start_new_session=True,
-                    )
-                record["pid"] = process.pid
-                status["updated_at"] = utc_now()
-                write_json(status_path, status)
-                print(
-                    f"Started {job['id']} on GPU {gpu}; PID {process.pid}", flush=True
-                )
             code = process.wait()
             with mutex:
                 record["exit_code"] = code
@@ -851,8 +927,9 @@ def run_job_batch(args, study, jobs, directory, status, *, gpus):
                 write_json(status_path, status)
                 print(f"{job['id']}: {record['status']}", flush=True)
 
-    with ThreadPoolExecutor(max_workers=len(gpus)) as pool:
-        futures = [pool.submit(worker, lane, gpu) for lane, gpu in enumerate(gpus)]
+    lanes = gpus * workers_per_gpu
+    with ThreadPoolExecutor(max_workers=len(lanes)) as pool:
+        futures = [pool.submit(worker, gpu) for gpu in lanes]
         for future in futures:
             try:
                 future.result()
@@ -922,6 +999,7 @@ def show_status(args):
                 "phases": status["phases"],
                 "validation_order": status.get("validation_order"),
                 "validation_modes": status.get("validation_modes", {}),
+                "workers_per_gpu": status.get("workers_per_gpu", 1),
                 "jobs": rows,
             },
             indent=2,
@@ -1005,6 +1083,12 @@ def main():
     )
     run.add_argument("--cpus-per-worker", type=int, default=16)
     run.add_argument(
+        "--workers-per-gpu",
+        type=int,
+        default=1,
+        help="Maximum independent study workers per GPU (default: 1)",
+    )
+    run.add_argument(
         "--reuse-study",
         type=Path,
         help="Explicitly reuse matching completed or active jobs from another study",
@@ -1019,6 +1103,12 @@ def main():
     finish.add_argument("--analysis-python", type=Path, required=True)
     finish.add_argument("--gpus", required=True)
     finish.add_argument("--cpus-per-worker", type=int, default=16)
+    finish.add_argument(
+        "--workers-per-gpu",
+        type=int,
+        default=1,
+        help="Maximum independent study workers per GPU (default: 1)",
+    )
     finish.add_argument("--reuse-study", type=Path)
     finish.set_defaults(handler=finish_study)
     status = commands.add_parser(
