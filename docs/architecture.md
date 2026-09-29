@@ -1,6 +1,6 @@
 # 代码架构与执行流程
 
-[项目首页](../README.md) · [环境配置](environment_setup.md) · [协作流程](../CONTRIBUTING.md)
+[项目首页](../README.zh-CN.md) · [环境配置](environment_setup.md) · [协作流程](../CONTRIBUTING.md)
 
 本页描述已经存在的代码。当前运行路径包括π0.5＋LIBERO外部评测桥接，以及Cosmos＋LIBERO、Cosmos＋RoboCasa原生单环境执行。模型主要执行路径已迁入本仓，支持独立融合开关和INT4/INT8后端；量化全量任务质量尚待验证。KINETIX动态case已有独立仓内执行路径；DOM已有原生单环境入口；通用模型服务仍属于后续方向。
 

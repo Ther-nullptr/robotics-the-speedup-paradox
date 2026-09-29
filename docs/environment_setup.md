@@ -1,6 +1,6 @@
 # 环境配置与首次运行
 
-[English](environment_setup.en.md) · [项目首页](../README.md) · [资源准备参数](../tools/RESOURCE_PREPARATION.md)
+[English](environment_setup.en.md) · [项目首页](../README.zh-CN.md) · [资源准备参数](../tools/RESOURCE_PREPARATION.md)
 
 本仓库将CPU工具、资源下载与模型/模拟器运行分开。`requirements-dev.txt` 用于CPU开发；`pip install -e .` 仅安装本仓Python包。GPU环境需要对应case的兼容外部源码和依赖，当前没有统一的一键新机安装器。
 
@@ -168,7 +168,7 @@ bash benchmarks/static/pi05_libero/run.sh \
   2>&1 | tee logs/pi05-trial-001.log
 ```
 
-每个成功结束的运行生成 `episode-summary.md` 和 `.json`。视频默认关闭，开启后保存在 `videos/<task>/`。失败预算统计、已有结果再分析和每种case额外产物见 [首页](../README.md#实验协议与输出) 与case文档。
+每个成功结束的运行生成 `episode-summary.md` 和 `.json`。视频默认关闭，开启后保存在 `videos/<task>/`。失败预算统计、已有结果再分析和每种case额外产物见 [首页](../README.zh-CN.md#metrics) 与case文档。
 
 ## 常见问题
 
