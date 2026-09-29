@@ -1,6 +1,6 @@
 # Environment Setup and First Run
 
-[中文](environment_setup.md) · [Project overview](../README.en.md) · [Resource options](../tools/RESOURCE_PREPARATION.md)
+[中文](environment_setup.md) · [Project overview](../README.md) · [Resource options](../tools/RESOURCE_PREPARATION.md)
 
 CPU tools, downloads and model/simulator execution use separate environments. `requirements-dev.txt` installs CPU development dependencies. `pip install -e .` installs this repository's package only. There is no complete fresh-machine GPU installer yet.
 
@@ -149,7 +149,7 @@ bash benchmarks/static/pi05_libero/run.sh \
   2>&1 | tee logs/pi05-trial-001.log
 ```
 
-Completed runs write `episode-summary.md` and `.json`. Videos are disabled by default; enabled recordings are stored under `videos/<task>/`. See the [project overview](../README.en.md#protocol-and-outputs) and case guides for the failure-budget metric and additional artifacts.
+Completed runs write `episode-summary.md` and `.json`. Videos are disabled by default; enabled recordings are stored under `videos/<task>/`. See the [project overview](../README.md#metrics) and case guides for the failure-budget metric and additional artifacts.
 
 ## Troubleshooting
 

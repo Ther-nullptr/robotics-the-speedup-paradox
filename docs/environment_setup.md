@@ -1,6 +1,6 @@
 # 环境配置与首次运行
 
-[English](environment_setup.en.md) · [项目首页](../README.md) · [资源准备参数](../tools/RESOURCE_PREPARATION.md)
+[English](environment_setup.en.md) · [项目首页](../README.zh-CN.md) · [资源准备参数](../tools/RESOURCE_PREPARATION.md)
 
 本仓库将CPU工具、资源下载与模型/模拟器运行分开。`requirements-dev.txt` 用于CPU开发；`pip install -e .` 仅安装本仓Python包。GPU环境需要对应case的兼容外部源码和依赖，当前没有统一的一键新机安装器。
 
