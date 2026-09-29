@@ -168,7 +168,7 @@ bash benchmarks/static/pi05_libero/run.sh \
   2>&1 | tee logs/pi05-trial-001.log
 ```
 
-每个成功结束的运行生成 `episode-summary.md` 和 `.json`。视频默认关闭，开启后保存在 `videos/<task>/`。失败预算统计、已有结果再分析和每种case额外产物见 [首页](../README.md#实验协议与输出) 与case文档。
+每个成功结束的运行生成 `episode-summary.md` 和 `.json`。视频默认关闭，开启后保存在 `videos/<task>/`。失败预算统计、已有结果再分析和每种case额外产物见 [首页](../README.zh-CN.md#metrics) 与case文档。
 
 ## 常见问题
 
