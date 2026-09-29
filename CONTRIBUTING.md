@@ -91,7 +91,7 @@ A reviewer other than the author checks scope, behavior, compatibility and evide
 
 不直接提交或推送到 `main`，不通过本地merge后直接push绕开PR，也不自动启用auto-merge。用户已经明确授权某个PR合并时，代理可在规则满足后执行，不重复请求同一授权；普通开发任务不代表已授权合并。
 
-本地规则与模板不能代替GitHub服务端限制。保护 `main`、要求 `CPU contracts` 状态及审查、禁止force push等设置由维护者在服务端核对，见 [.github说明](.github/README.md)。不能声称未检查的远端规则已启用。
+本地规则与模板不能代替GitHub服务端限制。保护 `main`、要求 `CPU contracts` 状态及审查、禁止force push等设置由维护者在服务端核对，见 [.github说明](.github/COLLABORATION.md)。不能声称未检查的远端规则已启用。
 
 ## 6. 文件与依赖边界 / Tracked files and dependencies
 
