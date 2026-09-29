@@ -197,13 +197,3 @@ If this project or paper helps your research, please cite:
   url           = {https://arxiv.org/abs/2606.28529}
 }
 ```
-
-<a id="license"></a>
-
-## Contributing, licensing and acknowledgments
-
-Report problems through [Issues](https://github.com/Ther-nullptr/robotics-the-speedup-paradox/issues), or submit a PR following the [contribution guide](CONTRIBUTING.md). Public CI runs CPU contract and behavior checks. GPU, model-resource and simulator validation is performed separately for each case.
-
-A license for project-owned code has not yet been selected. Third-party source retains its own terms, including the S-Lab non-commercial restriction on DynamicVLA/DOM-derived code. Weights and data have separate terms. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and module-level `PROVENANCE.json` files for sources, versions and migration boundaries.
-
-We thank the upstream PI0.5/OpenPI/LeRobot, VLASH, Cosmos Policy, LingBot-VA, DynamicVLA, LIBERO, RoboCasa, RoboTwin, RTC/KINETIX/Jax2D and CUTLASS projects. Their links and attribution records are collected in the notices above.
