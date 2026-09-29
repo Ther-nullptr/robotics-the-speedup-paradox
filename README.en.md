@@ -1,33 +1,61 @@
-# Robotics: The Speedup Paradox
+# The Speedup Paradox
 
-[中文](README.md) · [Environment setup](docs/environment_setup.en.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md)
+[![arXiv](https://img.shields.io/badge/arXiv-2606.28529-b31b1b.svg)](https://arxiv.org/abs/2606.28529)
+[![CPU CI](https://github.com/Ther-nullptr/robotics-the-speedup-paradox/actions/workflows/cpu.yml/badge.svg?branch=main)](https://github.com/Ther-nullptr/robotics-the-speedup-paradox/actions/workflows/cpu.yml)
 
-Infrastructure for embodied-model inference and closed-loop experiments. Bind a model to a compatible task and simulator, compare synchronous execution and paper-style static asynchrony, and collect consistent success-rate and control-step results.
+[中文](README.md) | **English**
 
-**Development preview.** Four static cases and one KINETIX dynamic case are runnable. Core model execution paths and optional operators are maintained here; loading frameworks and some simulators still require compatible external source; KINETIX execution source is owned here. CPU analysis tools work independently. A license for this repository's own code has not yet been selected; see [third-party and release status](THIRD_PARTY_NOTICES.md).
+**[The Speedup Paradox: Rethinking Inference Speed-Quality Trade-off in Embodied Tasks](https://arxiv.org/abs/2606.28529)**
 
-## Features and validation
+Yujin Wang, Junli Chen, Yixuan Li, Shunan Dong, Huazhong Yang, Yongpan Liu, Hongyang Jia
 
-| Case or tool | Available functionality | Validation scope |
+[Paper PDF](https://arxiv.org/pdf/2606.28529) · [Citation](#citation) · [Environment setup](docs/environment_setup.en.md) · [Contributing](CONTRIBUTING.md)
+
+Embodied inference and closed-loop evaluation code for the paper above. With a fixed model, task and scene, study how quantization, asynchronous execution and sampling steps jointly affect inference latency, task success and the number of actions needed to finish a task.
+
+This repository is a development preview. The sections below describe the implementation on `main`; each case guide specifies its environment, resources and validation scope. Model weights and large assets are prepared separately. A license for project-owned code has not yet been selected; see [licensing and provenance](#license).
+
+[Overview](#overview) · [Supported tasks](#cases) · [Quick start](#quickstart) · [Architecture](#architecture) · [Metrics and outputs](#metrics)
+
+<a id="overview"></a>
+
+## Overview
+
+**Faster inference does not necessarily finish a task faster.** The paper introduces TISED (Task-level Inference Speedup Effect Decomposition) to analyze speed–quality trade-offs in closed-loop execution. Static tasks may require more action chunks as action quality degrades. Dynamic tasks also depend on observation freshness and object motion, and hardware latency changes these trade-offs. [Paper](https://arxiv.org/abs/2606.28529)
+
+The repository supports four areas of experimentation:
+
+- **Inference and lightweight execution**: separate inference engines, repository-owned model hot paths, and optional BF16 fusion, CUDA Graph, INT8/INT4 and progressive quantization.
+- **Static evaluation**: per-case comparisons of synchronous execution and the paper's historical-observation abstraction, `paper_async`.
+- **Dynamic evaluation**: sampling-step and virtual-latency experiments in KINETIX, plus native streaming execution in DynamicVLA + DOM.
+- **Timing and statistics**: separate inference latency, control-step and task-success records, with speedups at distinct levels relative to a fixed baseline.
+
+<a id="cases"></a>
+
+## Supported models and tasks
+
+Models, checkpoints, tasks and simulators are bound into **cases**. Each combination below has its own entry point and environment.
+
+| Type | Case / run guide | Current implementation |
 | --- | --- | --- |
-| [π0.5 + LIBERO](benchmarks/static/pi05_libero/README.md) | External LeRobot/VLASH evaluator bridge; original-precision sync and `paper_async` | 500 `libero_object` episodes per mode: 494/500 synchronous, 464/500 with n′=2 |
-| [Cosmos + LIBERO](benchmarks/static/cosmos_libero/README.md) | Separate engine, native simulator, single-environment runner; H=16 | Native action alignment; one object task succeeded in 137 sync / 154 async control steps |
-| [Cosmos + RoboCasa](benchmarks/static/cosmos_robocasa/README.md) | Three cameras, H=32, initialization matching, single-environment execution | Fixed `TurnOffMicrowave` scene succeeded in 277 sync / 292 async steps |
-| [LingBot + RoboTwin](benchmarks/static/lingbot_robotwin/README.md) | Separate model worker and bimanual simulator; sync / `paper_async` with delayed KV/VAE observations | Matched single-scene adjust_bottle episodes succeeded in 115 sync / 120 n′=2 async commands |
-| [KINETIX dynamic case](benchmarks/dynamic/kinetix/README.md) | Owned flow model, environment and Jax2D; coarse/fine replay and [paired latency studies](docs/kinetix-latency-study.md) | Completed 12-task, five-step, 512-seed zero-delay scan; latency studies record completion separately |
-| [Inference optimization](benchmarks/inference/README.md) | Owned model hot paths; independent BF16 fusion, CUDA Graph and INT4/INT8 switches; per-round visualizations | Ada operator tests, fixed-input action checks and individual rollouts; quantized full-suite quality remains pending |
-| [Resource preparation](tools/RESOURCE_PREPARATION.md) | Download or reuse model resources; opt-in trajectory datasets | Local resource reuse, a real small-file download and launcher preflight |
-| [Experiment summaries](tools/summarize_experiment.py) | Success rate, failure-budget totals, success-only means and per-task summaries | Shared CLI and automatic end-of-run reports |
-| [Trajectory tools](tools/embodied/README.md) | Plot trajectories; compute velocity, acceleration and jerk | CPU tools with synthetic examples |
-| [Contracts and speedups](docs/protocols/speedup-metrics.md) | Validate artifacts and compute ratios against an explicit baseline | CPU validation and calculations from declared inputs |
+| Static | [π0.5 + LIBERO](benchmarks/static/pi05_libero/README.md) | LeRobot/VLASH evaluator bridge; original-precision `sync` / `paper_async`; optional repository-owned model execution |
+| Static | [Cosmos + LIBERO](benchmarks/static/cosmos_libero/README.md) | Separate engine and single-environment runner; `sync` / `paper_async`; optional BF16 optimizations and INT8/INT4 |
+| Static | [Cosmos + RoboCasa](benchmarks/static/cosmos_robocasa/README.md) | Three-camera kitchen tasks with initialization checks; shared Cosmos optimizations and a separate task contract |
+| Static | [LingBot-VA + RoboTwin](benchmarks/static/lingbot_robotwin/README.md) | Separate model worker and dual-arm simulator; `sync` / `paper_async` with delayed complete observation history |
+| Dynamic | [RTC flow policy + KINETIX](benchmarks/dynamic/kinetix/README.md) | Repository-owned JAX/Flax model, KINETIX/Jax2D and 12 levels; sampling-step experiments with `coarse` / `fine` latency mapping |
+| Dynamic | [DynamicVLA + DOM](benchmarks/dynamic/dynamicvla_dom/README.md) | Repository-owned model and DOM execution source; separate model/Isaac processes; native non-streaming / streaming |
 
-The Cosmos results are individual episodes, not full-suite success rates. The π0.5 full-suite counts describe the original baseline and do not validate new optimization settings; case guides describe the evaluation setup. Quantization targets explicit module scopes and has no full-suite quality-approved preset yet. Complete policy-service speedups and paper-model control-period speedups are reported separately.
+Static `paper_async` and dynamic streaming use separate execution protocols. KINETIX `fine` approximates fractional delays in actuator-command space while preserving the native physics grid. DOM keeps advancing during inference and handles expired predictions through its native action queue. See the case guides for protocol details.
 
-LingBot prioritizes static RoboTwin tasks. KINETIX owns its JAX policy/environment/physics and supports fine/coarse latency replay with historical mode aliases. DynamicVLA + DOM provides a native single-environment entry point (non-streaming/streaming; no paper_sync). Static and dynamic experiments use separate case protocols; model/simulator compatibility is established per case.
+Optimizations are explicitly enabled within each engine's supported scope. Module coverage, hardware backends and validation limits are documented in the [inference guide](benchmarks/inference/README.md), [Cosmos quantization guide](docs/cosmos-quantization.md) and [operator guide](src/robotics_kernels/README.md).
 
-## Quick start: CPU tools
+<a id="quickstart"></a>
 
-Use Python 3.11 or 3.12. These commands require no GPU or model download:
+## Quick start
+
+### 1. Install the CPU tools
+
+Python 3.11 or 3.12 is recommended. These tools require no GPU, checkpoint or simulator:
 
 ```bash
 git clone https://github.com/Ther-nullptr/robotics-the-speedup-paradox.git
@@ -41,28 +69,32 @@ python tools/compare_speedups.py --input examples/speedups/synthetic.json --mark
 python tools/embodied/trajectory_metrics.py --input tools/embodied/examples/smooth.csv
 ```
 
-Examples are synthetic. Plotting additionally requires `tools/embodied/requirements-plot.txt`. Optionally install the package with `python -m pip install -e .`; this does not install the model or simulator runtime.
+These examples use synthetic data. Plotting dependencies and metrics such as jerk are documented in the [trajectory tools](tools/embodied/README.md). Optionally install the repository's Python package with `python -m pip install -e .`; model and simulator stacks require separate installation.
 
-## Prepare resources and run a case
+### 2. Prepare a case environment and resources
 
-Follow the [environment guide](docs/environment_setup.en.md) to provide a separate GPU environment and compatible source for the selected case. The download helper can run in the CPU environment:
+Follow the [environment guide](docs/environment_setup.en.md) and the relevant case guide above, then fill in that entry point's `paths.env.example`. DynamicVLA + DOM and LingBot + RoboTwin use separate model and simulator environments; KINETIX uses a separate JAX environment.
+
+For π0.5 and Cosmos, the standalone [resource preparation tool](tools/RESOURCE_PREPARATION.md) can download assets or reuse local resources. The command below only previews the plan; remove `--dry-run` to download:
 
 ```bash
 python -m pip install -r tools/requirements-download.txt
 python tools/prepare_resources.py --case cosmos_robocasa --dry-run
 ```
 
-Remove `--dry-run` to download. Use `--source`, `--python` and the case-specific source arguments to generate launcher paths, or fill in the case's `paths.env.example` for existing resources.
-
-| Resource | Default location |
+| Resource or artifact | Default location |
 | --- | --- |
-| Models and optional trajectory datasets | `~/.cache/robotics/hub/`; override with `--root` or `ROBOTICS_RESOURCE_ROOT` |
-| Generated path configuration | `~/.cache/robotics/env/<case>.env` |
+| Models and optional training data downloaded by the tool | `~/.cache/robotics/hub/`; change the resource root with `--root` or `ROBOTICS_RESOURCE_ROOT` |
+| Path configuration generated by the tool | `~/.cache/robotics/env/<case>.env` |
 | LIBERO assets | `~/.cache/libero/assets/` |
-| RoboCasa kitchen assets | `robocasa/models/assets/` within the compatible fork; prepared separately |
-| Experiment outputs | Explicit `--output-dir` |
+| RoboCasa kitchen assets | `robocasa/models/assets/` in the corresponding fork; prepared separately |
+| Experiment artifacts | The explicit `--output-dir`; a directory under `runs/` is recommended |
 
-Once RoboCasa resources and runtime paths are configured:
+Bind LingBot, KINETIX and DOM resources as described in their guides. Experiment entry points use offline resources. Resource preparation is separate from installing the model and simulator environments.
+
+### 3. Run a closed-loop experiment
+
+For Cosmos + RoboCasa with its environment and resources already prepared, start with a resource preflight:
 
 ```bash
 source ~/.cache/robotics/env/cosmos_robocasa.env
@@ -72,73 +104,107 @@ bash benchmarks/static/cosmos_robocasa/run.sh \
   --output-dir runs/static/cosmos_robocasa/demo-001 --dry-run
 ```
 
-After preflight, remove `--dry-run` and select a GPU with `--gpu 3`. Add `--record-video` for a complete rollout video. Every real run needs a new output directory. Evaluation stays offline and reports missing resources explicitly.
+After preflight succeeds, remove `--dry-run` and add `--gpu 0`, selecting an idle GPU on your machine. Add `--record-video` to record complete episodes. Use a separate output directory for each new experiment.
 
-Full case instructions: [π0.5 + LIBERO](benchmarks/static/pi05_libero/README.md), [Cosmos + LIBERO](benchmarks/static/cosmos_libero/README.md), [Cosmos + RoboCasa](benchmarks/static/cosmos_robocasa/README.md). Detailed case and protocol documents currently use Chinese, with English CLI/report fields.
+For dynamic experiment batches, see [KINETIX sampling-step evaluation](docs/kinetix-flow-quality.md) and the [latency study workflow](docs/kinetix-latency-study.md). DOM's `--streaming`, model/simulator GPU selection and video options are covered in its [native run guide](benchmarks/dynamic/dynamicvla_dom/README.md).
 
-## Protocol and outputs
+<a id="architecture"></a>
 
-`paper_async` selects the observation from primitive control step `t−n′`. Images and proprio use the same snapshot; insufficient history falls back to the current observation. The current runner advances the environment serially. Inference time, simulation time and host wall time have separate meanings; see the [simulation protocol](docs/protocols/simulation.md).
+## Architecture
 
-Runs save configuration and source identities, checkpoint audits, episode records and summaries. Cosmos also writes per-request observation offsets and an automatic `run.log`; capture π0.5 console output with redirection or `tee` when needed. Videos are disabled by default and include initial and terminal frames when enabled. RoboCasa videos contain all three camera views.
+```text
+robotics-the-speedup-paradox/
+├── benchmarks/
+│   ├── static/                    # PI0.5/LIBERO, Cosmos/LIBERO, Cosmos/RoboCasa, LingBot/RoboTwin
+│   ├── dynamic/                   # Separate KINETIX and DynamicVLA/DOM entry points
+│   └── inference/                 # Complete-policy timing, numerical checks and optimization comparisons
+├── src/
+│   ├── robotics_bench/
+│   │   ├── engines/               # Model loading, preprocessing, chunk inference and worker adapters
+│   │   ├── models/                # Repository-owned PI0.5, Cosmos and DynamicVLA execution
+│   │   ├── optimizations/         # Optimization switches, quantization scopes and model adapters
+│   │   ├── protocols/             # Static control schedules and observation-history selection
+│   │   ├── simulators/            # Static simulator adapters and lifecycle management
+│   │   ├── kinetix/               # JAX policy, native environment/physics and latency protocols
+│   │   ├── dynamicvla_dom/        # Native DOM scenes, server, client and action queues
+│   │   ├── profiling/             # Profile processing and visualization support
+│   │   └── statistics.py          # Episode statistics and failure-budget penalties
+│   └── robotics_kernels/          # Separate BF16/INT operators and hardware backends
+├── tools/                         # Resources, contract checks, speedups and trajectory analysis
+├── schemas/                       # Shared manifest / trace contracts
+├── examples/                      # Small synthetic inputs and usage examples
+├── tests/                         # CPU behavior, contract and boundary checks
+├── docs/                          # Environments, architecture and experiment protocols
+└── .github/                       # CPU CI, issue and PR templates
+```
 
-Automatic reports include success rate, the overall mean with failed episodes charged their declared step budget, and the mean over successful episodes. Recompute reports independently:
+Each case runner connects inference to its simulator. Static and dynamic schedules are maintained separately and share statistics and low-level tools. External frameworks, SDKs and simulators whose source has not been migrated remain case-specific dependencies.
+
+```mermaid
+flowchart TB
+    accTitle: Static and Dynamic Experiment Architecture
+    accDescr: Case entry points select separate static and dynamic runners, which call their bound models and simulators and emit experiment records.
+    case_entry["Case CLI and resource configuration"] --> static_runner["Static runners<br/>sync / paper_async"]
+    case_entry --> dynamic_runner["Dynamic runners<br/>KINETIX / DOM"]
+    static_runner <--> static_model["PI0.5 / Cosmos / LingBot engines"]
+    static_runner <--> static_sim["LIBERO / RoboCasa / RoboTwin"]
+    dynamic_runner <--> dynamic_model["KINETIX flow / DynamicVLA"]
+    dynamic_runner <--> dynamic_sim["KINETIX + Jax2D / DOM + Isaac"]
+    static_runner --> artifacts["Episodes, requests, videos and statistics"]
+    dynamic_runner --> artifacts
+```
+
+Each group represents only the supported case bindings. The [architecture guide](docs/architecture.md) describes responsibilities, call paths and action lifecycles. The [operator guide](src/robotics_kernels/README.md) covers formats, loading, packing and execution layers.
+
+<a id="metrics"></a>
+
+## Metrics and experiment outputs
+
+Each entry point saves configuration and resource identities, episode records, request traces, logs and optional videos. Video defaults off for static entry points and KINETIX, and on for DOM. See each case's output table and the [artifact protocol](docs/protocols/artifacts.md) for fields and timing scopes.
+
+| Metric | Definition |
+| --- | --- |
+| Success rate | Successful episodes / all valid task episodes; infrastructure errors are reported separately |
+| Overall control steps | Actual steps for successes, declared budget penalties for failures |
+| Successful-episode mean steps / chunks | Successful episodes only; chunks use recorded inference events and zero-success means are undefined |
+| Inference, chunk-cycle and task speedups | Separate ratios against a fixed baseline for the same case; measurement scopes and estimates are identified |
+
+`paper_async` evaluates quality under each case's observation-history rules; estimated cycle time and actual host execution time are recorded separately. Complete-policy timing is covered by the [inference benchmark](benchmarks/inference/README.md), and paper-aligned definitions and examples by the [speedup protocol](docs/protocols/speedup-metrics.md).
+
+Recompute statistics for an existing static experiment without loading a model:
 
 ```bash
 python tools/summarize_experiment.py \
   --input runs/static/cosmos_robocasa/demo-001 --per-task
 ```
 
-RoboCasa's `--reference-run` verifies initialization against a completed baseline before the first inference. An initialization mismatch is an infrastructure error, not a failed policy episode.
+KINETIX and DOM provide their own summaries. Generated experiment data, videos, figures and reports stay in ignored `runs/` directories; machine configuration and scratch records stay in `.local/`.
 
-## Repository layout
+<a id="citation"></a>
 
-```text
-benchmarks/static/             CLI, configuration and lifecycle for four cases
-benchmarks/dynamic/            Native KINETIX dynamic case and future backends
-benchmarks/inference/          Fixed-input timing, validation and per-round visuals
-src/robotics_bench/engines/     Cosmos loading, preprocessing and action inference
-src/robotics_bench/models/      Owned PI0.5 and Cosmos execution paths
-src/robotics_bench/optimizations/ Independent switches and model precision adapters
-src/robotics_kernels/           BF16 fusion, integer kernels and Blackwell FP sources
-src/robotics_bench/simulators/  Native LIBERO and RoboCasa adapters
-src/robotics_bench/protocols/   Static action execution and observation history
-tools/                        Resources, validation, summaries and trajectories
-schemas/                      Shared contracts; case formats are declared separately
-tests/                        CPU behavior and contract checks
-docs/                         Setup, architecture and stable protocols
-.github/                      Issue/PR templates, CPU CI and contribution settings
+## Citation
+
+If this project or paper helps your research, please cite:
+
+```bibtex
+@misc{wang2026speedupparadox,
+  title         = {The Speedup Paradox: Rethinking Inference Speed-Quality Trade-off in Embodied Tasks},
+  author        = {Yujin Wang and Junli Chen and Yixuan Li and Shunan Dong and Huazhong Yang and Yongpan Liu and Hongyang Jia},
+  year          = {2026},
+  eprint        = {2606.28529},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  doi           = {10.48550/arXiv.2606.28529},
+  url           = {https://arxiv.org/abs/2606.28529}
+}
 ```
 
-The [architecture guide](docs/architecture.md) describes actual call relationships, reset behavior and extension boundaries.
+<a id="license"></a>
 
-## Operator experiments
+## Contributing, licensing and acknowledgments
 
-The [inference benchmark guide](benchmarks/inference/README.md) covers independent
-optimization switches, matched BF16/low-precision comparisons, numerical checks
-and automatic profile-visualizer reports. The [operator guide](src/robotics_kernels/README.md)
-documents formats and build boundaries. FP4/FP8 sources are preserved independently
-for Blackwell; target-device validation is pending. Generated reports stay in ignored `runs/`.
+Report problems through [Issues](https://github.com/Ther-nullptr/robotics-the-speedup-paradox/issues), or submit a PR following the [contribution guide](CONTRIBUTING.md). Public CI runs CPU contract and behavior checks. GPU, model-resource and simulator validation is performed separately for each case.
 
-The current Cosmos fixed INT8/INT4, progressive-coverage and shared-VAE
-implementation phase is complete. The [Cosmos quantization guide](docs/cosmos-quantization.md)
-collects runnable recipes, LIBERO/RoboCasa boundaries, measured results and
-rollback instructions. Quantized full-suite quality remains unverified, and all
-optimization switches are disabled by default.
+A license for project-owned code has not yet been selected. Third-party source retains its own terms, including the S-Lab non-commercial restriction on DynamicVLA/DOM-derived code. Weights and data have separate terms. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and module-level `PROVENANCE.json` files for sources, versions and migration boundaries.
 
-## Contributing and licensing
-
-Work on topic branches and submit pull requests. Use bilingual commit titles and PR descriptions covering purpose, changes, validation, impact and rollback. Small changes can use one sentence per language in each section. Maintainers review and merge through PR merge commits; see [CONTRIBUTING](CONTRIBUTING.md).
-
-Track source, necessary configuration, tests, stable documentation and small synthetic examples. Keep models, datasets, videos, logs, scratch notes and generated figures local. Public CPU CI does not run GPU experiments. Server-side branch protection must be verified separately from these repository files.
-
-Background: [The Speedup Paradox](https://arxiv.org/abs/2606.28529). Model and simulator sources retain their own terms, documented in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md). The repository-owned license remains undecided; this is a pre-release project.
-
-### Native DynamicVLA + DOM
-
-The [native DOM case](benchmarks/dynamic/dynamicvla_dom/README.md) owns its model
-and simulator adapter source and runs separate model/Isaac processes. It supports
-native non-streaming and streaming with episode-safe action delivery and separate
-generated/applied chunk accounting. The initial integration excludes paper_sync
-and quantization; runtime dependencies and assets remain external. Derived
-DynamicVLA source retains S-Lab non-commercial terms.
+We thank the upstream PI0.5/OpenPI/LeRobot, VLASH, Cosmos Policy, LingBot-VA, DynamicVLA, LIBERO, RoboCasa, RoboTwin, RTC/KINETIX/Jax2D and CUTLASS projects. Their links and attribution records are collected in the notices above.
