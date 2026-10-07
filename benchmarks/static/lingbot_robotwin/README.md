@@ -91,6 +91,29 @@ bash benchmarks/static/lingbot_robotwin/run.sh \
 
 协议写入manifest和 `paper-async.json`。RoboTwin每条控制指令的物理执行时长可变，目前没有固定Tact或校准后的Tinf，所以不生成论文周期/加速比；不能把250Hz物理tick、15FPS视频或RPC墙钟耗时替代这些量。
 
+## 汇总作者 evaluator 报告
+
+独立CPU工具 [score_reports.py](score_reports.py) 可汇总作者实验 evaluator 生成的逐回合 `*_analysis.json`。这些文件不同于上面 `run.py` 生成的 `episodes.jsonl`；工具不会从视频文件名推断成功，也不导入模型或仿真器。
+
+先用合成输入检查完整入口：
+
+```bash
+python benchmarks/static/lingbot_robotwin/score_reports.py \
+  --input benchmarks/static/lingbot_robotwin/scoring.synthetic.json \
+  --output /tmp/lingbot-score-example
+```
+
+真实结果按配置显式分组，并指定共同baseline：
+
+```bash
+python benchmarks/static/lingbot_robotwin/score_reports.py \
+  --group base=/path/to/base/episodes \
+  --group candidate=/path/to/candidate/episodes \
+  --baseline base --output /tmp/lingbot-score
+```
+
+输出为逐回合CSV及CSV、JSON、Markdown汇总。成功率使用全部回合；chunk时延按成功chunk加权；任务端点耗时和稳定性按成功回合加权。端点耗时是action与KV请求往返时间之和，不是任务wall time。只有每个chunk都显式记录 `execute_actions_equivalent_s` 时才报告加控制等效时间，不从动作数猜测。Stability重新核对evaluator的归一化jerk、符号翻转率、高频比例和尾段波动组合；它不是带SI单位的物理jerk。合成数据只验证聚合与“单chunk更快但总任务计算更慢”的边界，不是模型实测。
+
 ## 输出与已验证结果
 
 | 文件 | 内容 |
@@ -123,3 +146,5 @@ This case prioritizes RoboTwin and runs LingBot in a separate local model enviro
 The native protocol executes 16 commands from the initial conditional chunk and 32 from subsequent full chunks. `paper_async --overlap-actions N` (0..16) shifts every observed cache keyframe k to max(0, k−N), preserving all cameras and measured state in one snapshot. Initial padding keeps history monotone; generated action conditioning retains its native slots. This is an explicit stateful extension of the paper abstraction, with serial host execution. Command counts are distinct from physics ticks; no fixed-duration paper speedup is inferred.
 
 Matched `adjust_bottle` episodes succeeded in 115 commands (existing sync) and 120 commands (paper_async n′=2), each with 5 inference requests and 4 cache updates. Initialization fingerprints match; all delayed observation indices were verified. These are single-scene integration checks, not a 50-task evaluation or a time-speedup claim.
+
+The CPU-only `score_reports.py` utility separately aggregates the author's per-episode evaluator reports. It records all-episode success rate, success-conditioned endpoint/server timing and action stability, preserves source hashes, and emits CSV, JSON and Markdown. Endpoint timing is not task wall time; control-equivalent timing remains unavailable unless every chunk reports it explicitly. The bundled input is synthetic and tests aggregation only.
