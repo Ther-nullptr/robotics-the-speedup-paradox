@@ -11,6 +11,8 @@
 
 LingBot优先适配RoboTwin，当前同步入口与其他case的paper_async入口分别声明能力。目录名表示接入范围；运行配置必须进一步固定任务/初态清单、checkpoint与processor hash、环境、硬件、控制周期、预算和baseline。一次 smoke 不代表其他任务、权重或设备组合已验证。
 
+LingBot论文剪枝的操作点、CPU选择规则和后续GPU验收边界见 [KV read-window设计](lingbot_robotwin/KV_READ_WINDOW.md)。该设计默认关闭且尚未接入当前worker；参考选择器不代表运行时或任务级加速已经验证。
+
 ## 文件归属
 
 - 每个case的启动代码与配置放 `benchmarks/static/<case>/`；`pi05_libero/` 保留独立评测桥接，`cosmos_libero/` 使用 `config.py` 预检与 `run.py` 执行生命周期。
